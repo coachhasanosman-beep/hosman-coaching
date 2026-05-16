@@ -5,6 +5,7 @@ import ProgrammePage  from './ProgrammePage'
 import SchedulePage   from './SchedulePage'
 import SessionsPage   from './SessionsPage'
 import MetricsPage    from './MetricsPage'
+import SettingsPage   from './SettingsPage'
 
 export default function ClientApp() {
   return (
@@ -16,6 +17,7 @@ export default function ClientApp() {
           <Route path="schedule"  element={<SchedulePage />} />
           <Route path="sessions"  element={<SessionsPage />} />
           <Route path="metrics"   element={<MetricsPage />} />
+          <Route path="settings"  element={<SettingsPage />} />
         </Routes>
       </div>
       <BottomNav />
