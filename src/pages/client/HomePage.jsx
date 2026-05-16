@@ -88,9 +88,15 @@ export default function HomePage() {
   return (
     <div style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
       <div className="page-header">
-        <div className="brand-label">HOSMAN</div>
-        <h1>{greeting}, {firstName}</h1>
-      </div>
+  <div className="brand-label">HOSMAN</div>
+  <div className="row">
+    <h1>{greeting}, {firstName}</h1>
+    <button onClick={() => navigate('/app/settings')}
+      style={{ background: 'none', border: 'none', color: 'var(--text3)', cursor: 'pointer', padding: 4 }}>
+      <i className="ti ti-settings" style={{ fontSize: 22 }} aria-hidden="true" />
+    </button>
+  </div>
+</div>
       <div className="page-scroll">
 
         {/* 1hr notification banner */}
