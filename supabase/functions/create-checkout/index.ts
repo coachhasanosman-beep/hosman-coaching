@@ -30,7 +30,7 @@ serve(async (req) => {
     const session = await stripe.checkout.sessions.create({
       mode: 'payment',
       line_items: [{ price: price_id, quantity: 1 }],
-      payment_method_types: ['card', 'apple_pay', 'google_pay', 'link'],
+      payment_method_types: ['card', 'link'],
       billing_address_collection: 'required',
       success_url: `${appUrl}/app/sessions?payment=success`,
       cancel_url:  `${appUrl}/app/sessions?payment=cancelled`,
