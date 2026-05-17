@@ -10,9 +10,9 @@ export default function ProgrammePage({ clientId: propClientId }) {
   const clientId = propClientId || profile?.id
 
   const [programme, setProgramme]   = useState(null)
-  const [sessions, setSessions]     = useState([])   // [{id, name, position, exercises:[]}]
+  const [sessions, setSessions]     = useState([])
   const [activeTab, setActiveTab]   = useState(0)
-  const [renaming, setRenaming]     = useState(null) // tab index being renamed
+  const [renaming, setRenaming]     = useState(null)
   const [saving, setSaving]         = useState(false)
   const [loading, setLoading]       = useState(true)
   const saveTimer = useRef(null)
@@ -31,7 +31,6 @@ export default function ProgrammePage({ clientId: propClientId }) {
 
     let prog = progs?.[0]
     if (!prog) {
-      // Create default programme
       const { data } = await supabase.from('programmes').insert({ client_id: clientId, title: 'Block 1' }).select().single()
       prog = data
     }
@@ -70,7 +69,6 @@ export default function ProgrammePage({ clientId: propClientId }) {
     setSessions(created)
   }
 
-  // ── Auto-save with debounce ─────────────────────────────────
   const scheduleSave = useCallback((updatedSessions) => {
     if (saveTimer.current) clearTimeout(saveTimer.current)
     saveTimer.current = setTimeout(() => persistSessions(updatedSessions), 800)
@@ -80,7 +78,6 @@ export default function ProgrammePage({ clientId: propClientId }) {
     setSaving(true)
     try {
       for (const s of sess) {
-        // Upsert exercises
         for (const ex of s.exercises) {
           await supabase.from('exercises').upsert({
             id: ex.id,
@@ -92,7 +89,6 @@ export default function ProgrammePage({ clientId: propClientId }) {
             week_loads: ex.week_loads
           })
         }
-        // Rename session if needed
         await supabase.from('programme_sessions').update({ name: s.name }).eq('id', s.id)
       }
     } catch (e) {
@@ -110,7 +106,6 @@ export default function ProgrammePage({ clientId: propClientId }) {
     })
   }
 
-  // ── Exercise field change ────────────────────────────────────
   function onCellChange(exIdx, field, value) {
     updateSession(prev => prev.map((s, si) => {
       if (si !== activeTab) return s
@@ -132,7 +127,6 @@ export default function ProgrammePage({ clientId: propClientId }) {
     }))
   }
 
-  // ── Add exercise ─────────────────────────────────────────────
   async function addExercise() {
     const sess = sessions[activeTab]
     const { data } = await supabase.from('exercises').insert({
@@ -150,7 +144,6 @@ export default function ProgrammePage({ clientId: propClientId }) {
     }, 50)
   }
 
-  // ── Delete exercise ──────────────────────────────────────────
   async function deleteExercise(exIdx) {
     const ex = sessions[activeTab].exercises[exIdx]
     await supabase.from('exercises').delete().eq('id', ex.id)
@@ -159,7 +152,6 @@ export default function ProgrammePage({ clientId: propClientId }) {
     }))
   }
 
-  // ── Add session tab ──────────────────────────────────────────
   async function addSession() {
     if (sessions.length >= 7) return
     const labels = ['A','B','C','D','E','F','G']
@@ -171,7 +163,14 @@ export default function ProgrammePage({ clientId: propClientId }) {
     setActiveTab(sessions.length)
   }
 
-  // ── Rename tab ───────────────────────────────────────────────
+  async function deleteSession(idx) {
+    if (sessions.length <= 1) return toast.error('Must have at least one session')
+    const sess = sessions[idx]
+    await supabase.from('programme_sessions').delete().eq('id', sess.id)
+    setSessions(prev => prev.filter((_, i) => i !== idx))
+    setActiveTab(0)
+  }
+
   function startRename(idx) { setRenaming(idx) }
   async function finishRename(idx, value) {
     setRenaming(null)
@@ -179,7 +178,6 @@ export default function ProgrammePage({ clientId: propClientId }) {
     updateSession(prev => prev.map((s, i) => i !== idx ? s : { ...s, name }))
   }
 
-  // ── Drag to reorder rows ─────────────────────────────────────
   function onDragStart(idx) { dragSrc.current = idx }
   function onDrop(targetIdx) {
     if (dragSrc.current === null || dragSrc.current === targetIdx) return
@@ -208,22 +206,35 @@ export default function ProgrammePage({ clientId: propClientId }) {
         </div>
       </div>
 
-      {/* Session tabs */}
       <div className="tab-bar">
         {sessions.map((s, i) => (
-          <button key={s.id}
-            className={`tab-btn ${i === activeTab ? 'active' : ''}`}
-            onClick={() => setActiveTab(i)}
-            onDoubleClick={() => startRename(i)}>
-            {renaming === i
-              ? <input autoFocus className="tab-rename"
-                  defaultValue={s.name}
-                  onBlur={e => finishRename(i, e.target.value)}
-                  onKeyDown={e => { if (e.key === 'Enter') finishRename(i, e.target.value) }}
-                  onClick={e => e.stopPropagation()} />
-              : s.name
-            }
-          </button>
+          <div key={s.id} style={{ display: 'flex', alignItems: 'center', flexShrink: 0 }}>
+            <button
+              className={`tab-btn ${i === activeTab ? 'active' : ''}`}
+              onClick={() => setActiveTab(i)}
+              onDoubleClick={() => startRename(i)}>
+              {renaming === i
+                ? <input autoFocus className="tab-rename"
+                    defaultValue={s.name}
+                    onBlur={e => finishRename(i, e.target.value)}
+                    onKeyDown={e => { if (e.key === 'Enter') finishRename(i, e.target.value) }}
+                    onClick={e => e.stopPropagation()} />
+                : s.name
+              }
+            </button>
+            {sessions.length > 1 && (
+              <button
+                onClick={() => deleteSession(i)}
+                title="Delete session"
+                style={{
+                  background: 'none', border: 'none', color: 'var(--text3)',
+                  cursor: 'pointer', fontSize: 12, padding: '0 6px 0 0', opacity: 0.5,
+                  lineHeight: 1
+                }}>
+                <i className="ti ti-x" aria-hidden="true" />
+              </button>
+            )}
+          </div>
         ))}
         {sessions.length < 7 && (
           <button className="tab-btn" onClick={addSession} title="Add session" style={{ padding: '10px 8px' }}>
@@ -234,10 +245,9 @@ export default function ProgrammePage({ clientId: propClientId }) {
 
       <div style={{ fontSize: 10, color: 'var(--text3)', letterSpacing: '0.06em', padding: '6px 20px 4px', display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
         <i className="ti ti-pencil" style={{ fontSize: 11 }} aria-hidden="true" />
-        Tap any cell to edit · Drag <i className="ti ti-grip-vertical" style={{ fontSize: 11 }} aria-hidden="true" /> to reorder · Double-tap tab to rename
+        Tap any cell to edit · Drag <i className="ti ti-grip-vertical" style={{ fontSize: 11 }} aria-hidden="true" /> to reorder · Double-tap tab to rename · × to delete tab
       </div>
 
-      {/* Table */}
       <div style={{ flex: 1, overflow: 'hidden' }}>
         <div className="prog-wrap" style={{ height: '100%', overflowY: 'auto', overflowX: 'auto', padding: '0 20px', marginBottom: 0 }}>
           <table className="prog-table" style={{ minWidth: 640 }}>
