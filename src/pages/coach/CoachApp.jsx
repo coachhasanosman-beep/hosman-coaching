@@ -8,14 +8,20 @@ import CoachCalendar   from './CoachCalendar'
 
 export default function CoachApp() {
   const { profile } = useAuth()
-  const [clients, setClients]       = useState([])
-  const [activeClient, setActive]   = useState(null)
+  const [clients, setClients]         = useState([])
+  const [activeClient, setActive]     = useState(null)
   const [showCalendar, setShowCalendar] = useState(false)
-  const [inviting, setInviting]     = useState(false)
-  const [inviteForm, setInviteForm] = useState({ name: '', email: '' })
-  const [loading, setLoading]       = useState(true)
+  const [sidebarOpen, setSidebarOpen] = useState(true)
+  const [inviting, setInviting]       = useState(false)
+  const [inviteForm, setInviteForm]   = useState({ name: '', email: '' })
+  const [loading, setLoading]         = useState(true)
 
-  useEffect(() => { loadClients() }, [])
+  const isMobile = window.innerWidth < 768
+
+  useEffect(() => {
+    if (isMobile) setSidebarOpen(false)
+    loadClients()
+  }, [])
 
   async function loadClients() {
     setLoading(true)
@@ -45,16 +51,48 @@ export default function CoachApp() {
     return name?.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase() || '?'
   }
 
+  function selectClient(c) {
+    setActive(c)
+    setShowCalendar(false)
+    if (isMobile) setSidebarOpen(false)
+  }
+
+  function selectCalendar() {
+    setShowCalendar(true)
+    setActive(null)
+    if (isMobile) setSidebarOpen(false)
+  }
+
   return (
-    <div className="coach-layout">
-      <aside className="coach-sidebar">
+    <div style={{ display: 'flex', height: '100vh', overflow: 'hidden', position: 'relative' }}>
+
+      {/* Mobile overlay */}
+      {isMobile && sidebarOpen && (
+        <div onClick={() => setSidebarOpen(false)}
+          style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 10 }} />
+      )}
+
+      {/* Sidebar */}
+      <aside style={{
+        width: 240, flexShrink: 0,
+        background: 'var(--bg2)',
+        borderRight: '0.5px solid var(--border2)',
+        display: 'flex', flexDirection: 'column',
+        padding: '24px 16px',
+        overflowY: 'auto',
+        position: isMobile ? 'fixed' : 'relative',
+        left: isMobile ? (sidebarOpen ? 0 : -260) : 0,
+        top: 0, bottom: 0,
+        zIndex: isMobile ? 20 : 1,
+        transition: 'left 0.25s ease'
+      }}>
         <div style={{ marginBottom: 28 }}>
           <div className="brand-label" style={{ fontSize: 15, letterSpacing: '0.18em' }}>HOSMAN</div>
           <div style={{ fontSize: 10, color: 'var(--text3)', letterSpacing: '0.1em', marginTop: 2 }}>COACH DASHBOARD</div>
         </div>
 
         <button
-          onClick={() => { setShowCalendar(true); setActive(null) }}
+          onClick={selectCalendar}
           className={`client-row ${showCalendar ? 'active' : ''}`}
           style={{ marginBottom: 16, width: '100%', textAlign: 'left', background: 'none', border: 'none', cursor: 'pointer' }}>
           <div className="avatar" style={{ background: showCalendar ? 'var(--gold-bg)' : 'var(--surface2)', border: showCalendar ? '0.5px solid var(--gold-bdr)' : '0.5px solid transparent' }}>
@@ -71,7 +109,7 @@ export default function CoachApp() {
           clients.map(c => (
             <div key={c.id}
               className={`client-row ${activeClient?.id === c.id ? 'active' : ''}`}
-              onClick={() => { setActive(c); setShowCalendar(false) }}>
+              onClick={() => selectClient(c)}>
               <div className="avatar">{initials(c.full_name)}</div>
               <div style={{ flex: 1, overflow: 'hidden' }}>
                 <div style={{ fontSize: 13, fontWeight: 500, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
@@ -112,12 +150,27 @@ export default function CoachApp() {
         </div>
       </aside>
 
-      <main className="coach-main">
+      {/* Main panel */}
+      <main style={{ flex: 1, overflowY: 'auto', padding: isMobile ? '16px' : '28px 32px', display: 'flex', flexDirection: 'column' }}>
+        {/* Mobile toggle button */}
+        {isMobile && (
+          <button onClick={() => setSidebarOpen(true)}
+            style={{
+              background: 'var(--surface2)', border: '0.5px solid var(--border2)',
+              borderRadius: 8, padding: '8px 12px', color: 'var(--text)',
+              cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8,
+              fontSize: 12, fontWeight: 600, fontFamily: 'Montserrat, sans-serif',
+              letterSpacing: '0.06em', marginBottom: 16, width: 'fit-content'
+            }}>
+            <i className="ti ti-menu-2" style={{ fontSize: 16 }} /> MENU
+          </button>
+        )}
+
         {showCalendar
           ? <CoachCalendar clients={clients} />
           : activeClient
             ? <CoachClientView client={activeClient} onBack={() => setActive(null)} />
-            : <CoachOverview clients={clients} onSelectClient={c => { setActive(c); setShowCalendar(false) }} />
+            : <CoachOverview clients={clients} onSelectClient={selectClient} />
         }
       </main>
     </div>
