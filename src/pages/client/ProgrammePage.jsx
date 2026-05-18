@@ -94,6 +94,18 @@ export default function ProgrammePage({ clientId: propClientId }) {
     }
   }
 
+  async function deleteBlock(prog) {
+    if (programmes.length <= 1) return toast.error('Must have at least one block')
+    if (!window.confirm(`Delete ${prog.title}? This cannot be undone.`)) return
+    await supabase.from('programmes').delete().eq('id', prog.id)
+    const updated = programmes.filter(p => p.id !== prog.id)
+    setProgrammes(updated)
+    const latest = updated[updated.length - 1]
+    setActiveProg(latest)
+    await loadSessions(latest)
+    toast.success(`${prog.title} deleted`)
+  }
+
   async function createDefaultSessions(programmeId) {
     const defaults = ['Session A', 'Session B', 'Session C', 'Session D']
     const created = []
@@ -247,17 +259,29 @@ export default function ProgrammePage({ clientId: propClientId }) {
       {/* Block selector */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '0 20px 10px', flexShrink: 0, overflowX: 'auto' }}>
         {programmes.map(p => (
-          <button key={p.id}
-            onClick={() => switchBlock(p)}
-            style={{
-              padding: '5px 12px', borderRadius: 20, fontSize: 11, fontWeight: 600,
-              letterSpacing: '0.06em', cursor: 'pointer', flexShrink: 0,
-              background: activeProg?.id === p.id ? 'var(--gold)' : 'var(--surface2)',
-              color: activeProg?.id === p.id ? '#1a1a1a' : 'var(--text3)',
-              border: 'none', fontFamily: 'Montserrat, sans-serif'
-            }}>
-            {p.title.toUpperCase()}
-          </button>
+          <div key={p.id} style={{ display: 'flex', alignItems: 'center', gap: 2, flexShrink: 0 }}>
+            <button
+              onClick={() => switchBlock(p)}
+              style={{
+                padding: '5px 12px', borderRadius: 20, fontSize: 11, fontWeight: 600,
+                letterSpacing: '0.06em', cursor: 'pointer',
+                background: activeProg?.id === p.id ? 'var(--gold)' : 'var(--surface2)',
+                color: activeProg?.id === p.id ? '#1a1a1a' : 'var(--text3)',
+                border: 'none', fontFamily: 'Montserrat, sans-serif'
+              }}>
+              {p.title.toUpperCase()}
+            </button>
+            {isCoach && programmes.length > 1 && (
+              <button
+                onClick={() => deleteBlock(p)}
+                style={{
+                  background: 'none', border: 'none', color: 'var(--text3)',
+                  cursor: 'pointer', fontSize: 11, padding: '0 2px', opacity: 0.5, lineHeight: 1
+                }}>
+                <i className="ti ti-x" aria-hidden="true" />
+              </button>
+            )}
+          </div>
         ))}
         {isCoach && (
           <button
@@ -298,8 +322,7 @@ export default function ProgrammePage({ clientId: propClientId }) {
                 title="Delete session"
                 style={{
                   background: 'none', border: 'none', color: 'var(--text3)',
-                  cursor: 'pointer', fontSize: 12, padding: '0 6px 0 0', opacity: 0.5,
-                  lineHeight: 1
+                  cursor: 'pointer', fontSize: 12, padding: '0 6px 0 0', opacity: 0.5, lineHeight: 1
                 }}>
                 <i className="ti ti-x" aria-hidden="true" />
               </button>
