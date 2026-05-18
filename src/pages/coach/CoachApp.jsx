@@ -1,19 +1,19 @@
 import { useEffect, useState } from 'react'
-import { Routes, Route, useNavigate, useLocation } from 'react-router-dom'
 import { supabase, signOut, inviteClient } from '../../lib/supabase'
 import { useAuth } from '../../hooks/useAuth'
 import toast from 'react-hot-toast'
 import CoachClientView from './CoachClientView'
 import CoachOverview   from './CoachOverview'
+import CoachCalendar   from './CoachCalendar'
 
 export default function CoachApp() {
   const { profile } = useAuth()
   const [clients, setClients]       = useState([])
   const [activeClient, setActive]   = useState(null)
+  const [showCalendar, setShowCalendar] = useState(false)
   const [inviting, setInviting]     = useState(false)
   const [inviteForm, setInviteForm] = useState({ name: '', email: '' })
   const [loading, setLoading]       = useState(true)
-  const navigate = useNavigate()
 
   useEffect(() => { loadClients() }, [])
 
@@ -45,16 +45,23 @@ export default function CoachApp() {
     return name?.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase() || '?'
   }
 
-  const isMobile = window.innerWidth < 768
-
   return (
     <div className="coach-layout">
-      {/* Sidebar */}
       <aside className="coach-sidebar">
         <div style={{ marginBottom: 28 }}>
           <div className="brand-label" style={{ fontSize: 15, letterSpacing: '0.18em' }}>HOSMAN</div>
           <div style={{ fontSize: 10, color: 'var(--text3)', letterSpacing: '0.1em', marginTop: 2 }}>COACH DASHBOARD</div>
         </div>
+
+        <button
+          onClick={() => { setShowCalendar(true); setActive(null) }}
+          className={`client-row ${showCalendar ? 'active' : ''}`}
+          style={{ marginBottom: 16, width: '100%', textAlign: 'left', background: 'none', border: 'none', cursor: 'pointer' }}>
+          <div className="avatar" style={{ background: showCalendar ? 'var(--gold-bg)' : 'var(--surface2)', border: showCalendar ? '0.5px solid var(--gold-bdr)' : '0.5px solid transparent' }}>
+            <i className="ti ti-calendar" style={{ fontSize: 16, color: showCalendar ? 'var(--gold)' : 'var(--text3)' }} />
+          </div>
+          <div style={{ fontSize: 13, fontWeight: 500, color: showCalendar ? 'var(--text)' : 'var(--text3)' }}>Calendar</div>
+        </button>
 
         <div className="section-label mb-8">Clients</div>
 
@@ -64,7 +71,7 @@ export default function CoachApp() {
           clients.map(c => (
             <div key={c.id}
               className={`client-row ${activeClient?.id === c.id ? 'active' : ''}`}
-              onClick={() => setActive(c)}>
+              onClick={() => { setActive(c); setShowCalendar(false) }}>
               <div className="avatar">{initials(c.full_name)}</div>
               <div style={{ flex: 1, overflow: 'hidden' }}>
                 <div style={{ fontSize: 13, fontWeight: 500, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
@@ -105,11 +112,12 @@ export default function CoachApp() {
         </div>
       </aside>
 
-      {/* Main panel */}
       <main className="coach-main">
-        {activeClient
-          ? <CoachClientView client={activeClient} onBack={() => setActive(null)} />
-          : <CoachOverview clients={clients} onSelectClient={setActive} />
+        {showCalendar
+          ? <CoachCalendar clients={clients} />
+          : activeClient
+            ? <CoachClientView client={activeClient} onBack={() => setActive(null)} />
+            : <CoachOverview clients={clients} onSelectClient={c => { setActive(c); setShowCalendar(false) }} />
         }
       </main>
     </div>
