@@ -72,12 +72,28 @@ export default function CoachCalendar({ clients }) {
     setSelectedSession(null)
   }
 
+  async function sendCalendarInvite(session, clientEmail, clientName, cancelled = false) {
+    try {
+      const { data: { session: authSession } } = await supabase.auth.getSession()
+      await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/send-calendar-invite`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${authSession.access_token}`
+        },
+        body: JSON.stringify({ session, clientEmail, clientName, cancelled })
+      })
+    } catch (e) {
+      console.error('Calendar invite failed:', e)
+    }
+  }
+
   async function saveSession() {
     if (!formClient || !formDate) return toast.error('Select a client and date')
     setSaving(true)
     try {
       const starts_at = new Date(`${formDate}T${formTime}`).toISOString()
-      await supabase.from('scheduled_sessions').insert({
+      const { data } = await supabase.from('scheduled_sessions').insert({
         client_id: formClient,
         title: formTitle,
         location: formLocation,
@@ -86,8 +102,14 @@ export default function CoachCalendar({ clients }) {
         type: 'coached',
         status: 'scheduled',
         created_by: profile.id
-      })
-      toast.success('Session scheduled')
+      }).select().single()
+
+      const client = clients.find(c => c.id === formClient)
+      if (client) {
+        await sendCalendarInvite(data, client.email, client.full_name, false)
+      }
+
+      toast.success('Session scheduled — calendar invite sent')
       setShowForm(false)
       loadSessions()
     } catch (e) {
@@ -99,8 +121,15 @@ export default function CoachCalendar({ clients }) {
 
   async function deleteSession(id) {
     if (!window.confirm('Cancel this session?')) return
+    const sess = sessions.find(s => s.id === id)
     await supabase.from('scheduled_sessions').update({ status: 'cancelled' }).eq('id', id)
-    toast.success('Session cancelled')
+
+    if (sess) {
+      const client = clients.find(c => c.id === sess.client_id)
+      if (client) await sendCalendarInvite(sess, client.email, client.full_name, true)
+    }
+
+    toast.success('Session cancelled — client notified')
     setSelectedSession(null)
     loadSessions()
   }
@@ -259,7 +288,7 @@ export default function CoachCalendar({ clients }) {
                   <input className="input" type="number" value={formDuration} onChange={e => setFormDuration(e.target.value)} style={{ fontSize: 12 }} />
                 </div>
                 <button className="btn btn-gold btn-sm" onClick={saveSession} disabled={saving}>
-                  {saving ? 'Saving…' : 'Schedule'}
+                  {saving ? 'Saving…' : 'Schedule & send invite'}
                 </button>
               </>
             )}

@@ -4,6 +4,22 @@ import toast from 'react-hot-toast'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../hooks/useAuth'
 
+async function sendCalendarInvite(session, clientEmail, clientName, cancelled = false) {
+  try {
+    const { data: { session: authSession } } = await supabase.auth.getSession()
+    await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/send-calendar-invite`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${authSession.access_token}`
+      },
+      body: JSON.stringify({ session, clientEmail, clientName, cancelled })
+    })
+  } catch (e) {
+    console.error('Calendar invite failed:', e)
+  }
+}
+
 export default function CoachSessionManager({ clientId, client }) {
   const { profile } = useAuth()
   const [pkg, setPkg]     = useState(null)
@@ -30,7 +46,7 @@ export default function CoachSessionManager({ clientId, client }) {
     setSaving(true)
     try {
       const starts_at = new Date(`${form.date}T${form.time}`).toISOString()
-      await supabase.from('scheduled_sessions').insert({
+      const { data } = await supabase.from('scheduled_sessions').insert({
         client_id: clientId,
         title: form.title,
         location: form.location,
@@ -39,8 +55,12 @@ export default function CoachSessionManager({ clientId, client }) {
         type: 'coached',
         status: 'scheduled',
         created_by: profile.id
-      })
-      toast.success('Session scheduled')
+      }).select().single()
+
+      // Send calendar invite
+      await sendCalendarInvite(data, client.email, client.full_name, false)
+
+      toast.success('Session scheduled — calendar invite sent')
       setShowForm(false)
       setForm({ title: 'Session with Hasan', location: '', date: '', time: '10:00', duration: 60 })
       load()
@@ -53,7 +73,6 @@ export default function CoachSessionManager({ clientId, client }) {
 
   async function markComplete(id) {
     await supabase.from('scheduled_sessions').update({ status: 'completed' }).eq('id', id)
-    // Deduct from package
     if (pkg) {
       await supabase.from('packages').update({ sessions_used: pkg.sessions_used + 1 }).eq('id', pkg.id)
     }
@@ -62,8 +81,13 @@ export default function CoachSessionManager({ clientId, client }) {
   }
 
   async function cancelSession(id) {
+    const sess = sessions.find(s => s.id === id)
     await supabase.from('scheduled_sessions').update({ status: 'cancelled' }).eq('id', id)
-    toast.success('Session cancelled')
+
+    // Send cancellation
+    if (sess) await sendCalendarInvite(sess, client.email, client.full_name, true)
+
+    toast.success('Session cancelled — client notified')
     load()
   }
 
@@ -172,12 +196,11 @@ export default function CoachSessionManager({ clientId, client }) {
             </div>
           </div>
           <button className="btn btn-primary btn-sm" onClick={addSession} disabled={saving}>
-            {saving ? 'Saving…' : 'Schedule'}
+            {saving ? 'Saving…' : 'Schedule & send invite'}
           </button>
         </div>
       )}
 
-      {/* Sessions list */}
       {sessions.map(s => (
         <div key={s.id} className="sched-item" style={{ marginBottom: 8, cursor: 'default' }}>
           <div style={{ fontSize: 12, color: 'var(--text3)', minWidth: 52 }}>
