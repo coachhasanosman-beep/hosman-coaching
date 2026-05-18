@@ -9,33 +9,44 @@ export default function ProgrammePage({ clientId: propClientId }) {
   const { profile, isCoach } = useAuth()
   const clientId = propClientId || profile?.id
 
-  const [programme, setProgramme]   = useState(null)
+  const [programmes, setProgrammes] = useState([])
+  const [activeProg, setActiveProg] = useState(null)
   const [sessions, setSessions]     = useState([])
   const [activeTab, setActiveTab]   = useState(0)
   const [renaming, setRenaming]     = useState(null)
   const [saving, setSaving]         = useState(false)
   const [loading, setLoading]       = useState(true)
+  const [creatingBlock, setCreatingBlock] = useState(false)
   const saveTimer = useRef(null)
   const dragSrc   = useRef(null)
 
-  useEffect(() => { if (clientId) loadProgramme() }, [clientId])
+  useEffect(() => { if (clientId) loadProgrammes() }, [clientId])
 
-  async function loadProgramme() {
+  async function loadProgrammes() {
     setLoading(true)
     const { data: progs } = await supabase
       .from('programmes')
       .select('*')
       .eq('client_id', clientId)
-      .order('created_at', { ascending: false })
-      .limit(1)
+      .order('created_at', { ascending: true })
 
-    let prog = progs?.[0]
-    if (!prog) {
-      const { data } = await supabase.from('programmes').insert({ client_id: clientId, title: 'Block 1' }).select().single()
-      prog = data
+    if (!progs || progs.length === 0) {
+      const { data } = await supabase.from('programmes')
+        .insert({ client_id: clientId, title: 'Block 1' })
+        .select().single()
+      setProgrammes([data])
+      setActiveProg(data)
+      await loadSessions(data)
+    } else {
+      setProgrammes(progs)
+      const latest = progs[progs.length - 1]
+      setActiveProg(latest)
+      await loadSessions(latest)
     }
-    setProgramme(prog)
+    setLoading(false)
+  }
 
+  async function loadSessions(prog) {
     const { data: sess } = await supabase
       .from('programme_sessions')
       .select('*, exercises(*)')
@@ -53,8 +64,34 @@ export default function ProgrammePage({ clientId: propClientId }) {
         }))
       }))
       setSessions(normalised)
+      setActiveTab(0)
     }
-    setLoading(false)
+  }
+
+  async function switchBlock(prog) {
+    setActiveProg(prog)
+    setSessions([])
+    setActiveTab(0)
+    await loadSessions(prog)
+  }
+
+  async function createNewBlock() {
+    setCreatingBlock(true)
+    try {
+      const nextNum = programmes.length + 1
+      const { data } = await supabase.from('programmes')
+        .insert({ client_id: clientId, title: `Block ${nextNum}` })
+        .select().single()
+      const updated = [...programmes, data]
+      setProgrammes(updated)
+      setActiveProg(data)
+      await createDefaultSessions(data.id)
+      toast.success(`Block ${nextNum} created`)
+    } catch (e) {
+      toast.error('Failed to create block')
+    } finally {
+      setCreatingBlock(false)
+    }
   }
 
   async function createDefaultSessions(programmeId) {
@@ -67,6 +104,7 @@ export default function ProgrammePage({ clientId: propClientId }) {
       created.push({ ...data, exercises: [] })
     }
     setSessions(created)
+    setActiveTab(0)
   }
 
   const scheduleSave = useCallback((updatedSessions) => {
@@ -157,7 +195,7 @@ export default function ProgrammePage({ clientId: propClientId }) {
     const labels = ['A','B','C','D','E','F','G']
     const name = `Session ${labels[sessions.length] || sessions.length + 1}`
     const { data } = await supabase.from('programme_sessions').insert({
-      programme_id: programme.id, name, position: sessions.length
+      programme_id: activeProg.id, name, position: sessions.length
     }).select().single()
     setSessions(prev => [...prev, { ...data, exercises: [] }])
     setActiveTab(sessions.length)
@@ -206,6 +244,38 @@ export default function ProgrammePage({ clientId: propClientId }) {
         </div>
       </div>
 
+      {/* Block selector */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '0 20px 10px', flexShrink: 0, overflowX: 'auto' }}>
+        {programmes.map(p => (
+          <button key={p.id}
+            onClick={() => switchBlock(p)}
+            style={{
+              padding: '5px 12px', borderRadius: 20, fontSize: 11, fontWeight: 600,
+              letterSpacing: '0.06em', cursor: 'pointer', flexShrink: 0,
+              background: activeProg?.id === p.id ? 'var(--gold)' : 'var(--surface2)',
+              color: activeProg?.id === p.id ? '#1a1a1a' : 'var(--text3)',
+              border: 'none', fontFamily: 'Montserrat, sans-serif'
+            }}>
+            {p.title.toUpperCase()}
+          </button>
+        ))}
+        {isCoach && (
+          <button
+            onClick={createNewBlock}
+            disabled={creatingBlock}
+            style={{
+              padding: '5px 12px', borderRadius: 20, fontSize: 11, fontWeight: 600,
+              letterSpacing: '0.06em', cursor: 'pointer', flexShrink: 0,
+              background: 'transparent', color: 'var(--text3)',
+              border: '0.5px dashed var(--border2)', fontFamily: 'Montserrat, sans-serif',
+              display: 'flex', alignItems: 'center', gap: 4
+            }}>
+            <i className="ti ti-plus" style={{ fontSize: 12 }} /> {creatingBlock ? 'Creating…' : 'New block'}
+          </button>
+        )}
+      </div>
+
+      {/* Session tabs */}
       <div className="tab-bar">
         {sessions.map((s, i) => (
           <div key={s.id} style={{ display: 'flex', alignItems: 'center', flexShrink: 0 }}>
@@ -248,6 +318,7 @@ export default function ProgrammePage({ clientId: propClientId }) {
         Tap any cell to edit · Drag <i className="ti ti-grip-vertical" style={{ fontSize: 11 }} aria-hidden="true" /> to reorder · Double-tap tab to rename · × to delete tab
       </div>
 
+      {/* Table */}
       <div style={{ flex: 1, overflow: 'hidden' }}>
         <div className="prog-wrap" style={{ height: '100%', overflowY: 'auto', overflowX: 'auto', padding: '0 20px', marginBottom: 0 }}>
           <table className="prog-table" style={{ minWidth: 640 }}>
