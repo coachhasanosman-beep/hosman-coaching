@@ -19,8 +19,19 @@ export default function ProgrammePage({ clientId: propClientId }) {
   const [creatingBlock, setCreatingBlock] = useState(false)
   const saveTimer = useRef(null)
   const dragSrc   = useRef(null)
+  const tableRef  = useRef(null)
 
   useEffect(() => { if (clientId) loadProgrammes() }, [clientId])
+
+  // Auto-resize all textareas after render
+  useEffect(() => {
+    if (tableRef.current) {
+      tableRef.current.querySelectorAll('textarea').forEach(ta => {
+        ta.style.height = 'auto'
+        ta.style.height = ta.scrollHeight + 'px'
+      })
+    }
+  }, [sessions, activeTab])
 
   async function loadProgrammes() {
     setLoading(true)
@@ -277,21 +288,15 @@ export default function ProgrammePage({ clientId: propClientId }) {
               {p.title.toUpperCase()}
             </button>
             {isCoach && programmes.length > 1 && (
-              <button
-                onClick={() => deleteBlock(p)}
-                style={{
-                  background: 'none', border: 'none', color: 'var(--text3)',
-                  cursor: 'pointer', fontSize: 11, padding: '0 2px', opacity: 0.5, lineHeight: 1
-                }}>
+              <button onClick={() => deleteBlock(p)}
+                style={{ background: 'none', border: 'none', color: 'var(--text3)', cursor: 'pointer', fontSize: 11, padding: '0 2px', opacity: 0.5, lineHeight: 1 }}>
                 <i className="ti ti-x" aria-hidden="true" />
               </button>
             )}
           </div>
         ))}
         {isCoach && (
-          <button
-            onClick={createNewBlock}
-            disabled={creatingBlock}
+          <button onClick={createNewBlock} disabled={creatingBlock}
             style={{
               padding: '5px 12px', borderRadius: 20, fontSize: 11, fontWeight: 600,
               letterSpacing: '0.06em', cursor: 'pointer', flexShrink: 0,
@@ -322,13 +327,8 @@ export default function ProgrammePage({ clientId: propClientId }) {
               }
             </button>
             {sessions.length > 1 && (
-              <button
-                onClick={() => deleteSession(i)}
-                title="Delete session"
-                style={{
-                  background: 'none', border: 'none', color: 'var(--text3)',
-                  cursor: 'pointer', fontSize: 12, padding: '0 6px 0 0', opacity: 0.5, lineHeight: 1
-                }}>
+              <button onClick={() => deleteSession(i)} title="Delete session"
+                style={{ background: 'none', border: 'none', color: 'var(--text3)', cursor: 'pointer', fontSize: 12, padding: '0 6px 0 0', opacity: 0.5, lineHeight: 1 }}>
                 <i className="ti ti-x" aria-hidden="true" />
               </button>
             )}
@@ -348,7 +348,7 @@ export default function ProgrammePage({ clientId: propClientId }) {
 
       {/* Table */}
       <div style={{ flex: 1, overflow: 'hidden' }}>
-        <div className="prog-wrap" style={{ height: '100%', overflowY: 'auto', overflowX: 'auto', padding: '0 20px', marginBottom: 0 }}>
+        <div ref={tableRef} className="prog-wrap" style={{ height: '100%', overflowY: 'auto', overflowX: 'auto', padding: '0 20px', marginBottom: 0 }}>
           <table className="prog-table" style={{ minWidth: 640 }}>
             <thead>
               <tr>
@@ -369,7 +369,7 @@ export default function ProgrammePage({ clientId: propClientId }) {
                   onDragStart={() => onDragStart(ei)}
                   onDragOver={e => e.preventDefault()}
                   onDrop={() => onDrop(ei)}>
-                  <td>
+                  <td style={{ verticalAlign: 'top', paddingTop: 10 }}>
                     <span className="drag-handle">
                       <i className="ti ti-grip-vertical" aria-hidden="true" />
                     </span>
@@ -380,9 +380,9 @@ export default function ProgrammePage({ clientId: propClientId }) {
                       value={ex.name}
                       placeholder="Exercise name"
                       rows={1}
-                      onChange={e => onCellChange(ei, 'name', e.target.value)}
-                      onInput={autoResize}
-                      style={{ resize: 'none', overflow: 'hidden', lineHeight: '1.4', display: 'block' }}
+                      onChange={e => { onCellChange(ei, 'name', e.target.value); autoResize(e) }}
+                      onFocus={autoResize}
+                      style={{ resize: 'none', overflow: 'hidden', lineHeight: '1.5', display: 'block', width: '100%', minHeight: '20px' }}
                     />
                   </td>
                   <td>
@@ -396,9 +396,9 @@ export default function ProgrammePage({ clientId: propClientId }) {
                       value={ex.notes}
                       placeholder="—"
                       rows={1}
-                      onChange={e => onCellChange(ei, 'notes', e.target.value)}
-                      onInput={autoResize}
-                      style={{ resize: 'none', overflow: 'hidden', lineHeight: '1.4', display: 'block' }}
+                      onChange={e => { onCellChange(ei, 'notes', e.target.value); autoResize(e) }}
+                      onFocus={autoResize}
+                      style={{ resize: 'none', overflow: 'hidden', lineHeight: '1.5', display: 'block', width: '100%', minHeight: '20px' }}
                     />
                   </td>
                   {Array.from({ length: WEEK_COUNT }, (_, wi) => (
@@ -408,7 +408,7 @@ export default function ProgrammePage({ clientId: propClientId }) {
                         onChange={e => onWeekChange(ei, wi, e.target.value)} />
                     </td>
                   ))}
-                  <td>
+                  <td style={{ verticalAlign: 'top', paddingTop: 10 }}>
                     <button className="delete-row-btn" onClick={() => deleteExercise(ei)} title="Remove exercise">
                       <i className="ti ti-x" aria-hidden="true" />
                     </button>
