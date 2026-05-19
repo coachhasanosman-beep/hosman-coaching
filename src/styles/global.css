@@ -223,6 +223,7 @@ h3 { font-size: 15px; font-weight: 500; color: var(--text); }
   vertical-align: top;
   white-space: normal;
   word-break: break-word;
+  max-width: 200px;
 }
 .prog-table tr:last-child td { border-bottom: none; }
 .prog-table tr:hover td { background: rgba(255,255,255,0.015); }
@@ -371,3 +372,11 @@ h3 { font-size: 15px; font-weight: 500; color: var(--text); }
 /* ── Chart ─── */
 .recharts-text { fill: var(--text3) !important; font-family: 'Montserrat', sans-serif !important; font-size: 10px !important; }
 .recharts-cartesian-grid line { stroke: var(--border) !important; }
+
+/* ── Programme textarea cells ─── */
+.cell-input textarea, textarea.cell-input {
+  white-space: pre-wrap;
+  word-break: break-word;
+  overflow-wrap: break-word;
+  min-height: 20px;
+}
