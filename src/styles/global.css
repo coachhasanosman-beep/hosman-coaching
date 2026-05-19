@@ -399,20 +399,33 @@ h3 { font-size: 15px; font-weight: 500; color: var(--text); }
 .prog-table tr:hover td:nth-child(4) { background: var(--surface2); }
 
 @media (max-width: 768px) {
-  /* Only freeze first 3 columns on mobile - notes and weeks scroll */
+  /* Freeze only drag handle, exercise, sets×reps */
   .prog-table th:nth-child(1),
-  .prog-table td:nth-child(1) { position: sticky; left: 0; z-index: 3; background: var(--surface2); }
-
+  .prog-table td:nth-child(1) { 
+    position: sticky; left: 0; z-index: 3; 
+    background: var(--surface2); 
+  }
   .prog-table th:nth-child(2),
-  .prog-table td:nth-child(2) { position: sticky; left: 22px; z-index: 3; background: var(--surface2); min-width: 90px; max-width: 90px; }
-
+  .prog-table td:nth-child(2) { 
+    position: sticky; left: 22px; z-index: 3; 
+    background: var(--surface2); 
+    min-width: 100px; max-width: 100px; 
+  }
   .prog-table th:nth-child(3),
-  .prog-table td:nth-child(3) { position: sticky; left: 112px; z-index: 3; background: var(--surface2); min-width: 55px; max-width: 55px; }
-
-  /* Unfreeze notes column so it scrolls */
+  .prog-table td:nth-child(3) { 
+    position: sticky; left: 122px; z-index: 3; 
+    background: var(--surface2); 
+    min-width: 60px; max-width: 60px; 
+  }
+  /* Notes and weeks scroll freely - not sticky */
   .prog-table th:nth-child(4),
-  .prog-table td:nth-child(4) { position: relative; left: auto; min-width: 80px; }
-
+  .prog-table td:nth-child(4),
+  .prog-table th:nth-child(n+5),
+  .prog-table td:nth-child(n+5) { 
+    position: relative !important; 
+    left: auto !important; 
+    z-index: 1; 
+  }
   /* Fix zoom on input tap */
   .cell-input, textarea.cell-input {
     font-size: 16px !important;
