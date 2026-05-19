@@ -397,3 +397,14 @@ h3 { font-size: 15px; font-weight: 500; color: var(--text); }
 .prog-table tr:hover td:nth-child(2),
 .prog-table tr:hover td:nth-child(3),
 .prog-table tr:hover td:nth-child(4) { background: var(--surface2); }
+
+@media (max-width: 768px) {
+  .prog-table th:nth-child(2),
+  .prog-table td:nth-child(2) { left: 22px; min-width: 100px; max-width: 100px; }
+
+  .prog-table th:nth-child(3),
+  .prog-table td:nth-child(3) { left: 122px; min-width: 60px; max-width: 60px; }
+
+  .prog-table th:nth-child(4),
+  .prog-table td:nth-child(4) { left: 182px; min-width: 60px; max-width: 60px; }
+}
