@@ -25,12 +25,17 @@ export default function ProgrammePage({ clientId: propClientId }) {
 
   // Auto-resize all textareas after render
   useEffect(() => {
-    if (tableRef.current) {
-      tableRef.current.querySelectorAll('textarea').forEach(ta => {
-        ta.style.height = 'auto'
-        ta.style.height = ta.scrollHeight + 'px'
-      })
+    const resize = () => {
+      if (tableRef.current) {
+        tableRef.current.querySelectorAll('textarea').forEach(ta => {
+          ta.style.height = 'auto'
+          ta.style.height = ta.scrollHeight + 'px'
+        })
+      }
     }
+    resize()
+    setTimeout(resize, 100)
+    setTimeout(resize, 500)
   }, [sessions, activeTab])
 
   async function loadProgrammes() {
