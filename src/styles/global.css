@@ -380,3 +380,20 @@ h3 { font-size: 15px; font-weight: 500; color: var(--text); }
   overflow-wrap: break-word;
   min-height: 20px;
 }
+/* ── Sticky programme columns ─── */
+.prog-table th:nth-child(1),
+.prog-table td:nth-child(1) { position: sticky; left: 0; z-index: 3; background: var(--surface2); }
+
+.prog-table th:nth-child(2),
+.prog-table td:nth-child(2) { position: sticky; left: 22px; z-index: 3; background: var(--surface2); }
+
+.prog-table th:nth-child(3),
+.prog-table td:nth-child(3) { position: sticky; left: 162px; z-index: 3; background: var(--surface2); }
+
+.prog-table th:nth-child(4),
+.prog-table td:nth-child(4) { position: sticky; left: 242px; z-index: 3; background: var(--surface2); }
+
+.prog-table tr:hover td:nth-child(1),
+.prog-table tr:hover td:nth-child(2),
+.prog-table tr:hover td:nth-child(3),
+.prog-table tr:hover td:nth-child(4) { background: var(--surface2); }

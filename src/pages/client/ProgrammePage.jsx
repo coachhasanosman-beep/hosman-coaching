@@ -354,7 +354,7 @@ export default function ProgrammePage({ clientId: propClientId }) {
       {/* Table */}
       <div style={{ flex: 1, overflow: 'hidden' }}>
         <div ref={tableRef} className="prog-wrap" style={{ height: '100%', overflowY: 'auto', overflowX: 'auto', padding: '0 20px', marginBottom: 0 }}>
-          <table className="prog-table" style={{ minWidth: 640 }}>
+          <table className="prog-table" style={{ minWidth: 640, borderCollapse: 'separate', borderSpacing: 0 }}>
             <thead>
               <tr>
                 <th style={{ width: 22 }}></th>
