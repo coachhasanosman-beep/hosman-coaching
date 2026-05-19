@@ -241,6 +241,11 @@ export default function ProgrammePage({ clientId: propClientId }) {
     dragSrc.current = null
   }
 
+  function autoResize(e) {
+    e.target.style.height = 'auto'
+    e.target.style.height = e.target.scrollHeight + 'px'
+  }
+
   if (loading) return <div className="spinner">Loading programme…</div>
   const curr = sessions[activeTab]
 
@@ -348,9 +353,9 @@ export default function ProgrammePage({ clientId: propClientId }) {
             <thead>
               <tr>
                 <th style={{ width: 22 }}></th>
-                <th style={{ minWidth: 120 }}>Exercise</th>
+                <th style={{ minWidth: 140 }}>Exercise</th>
                 <th style={{ minWidth: 80 }}>Sets × Reps</th>
-                <th style={{ minWidth: 76 }}>Notes</th>
+                <th style={{ minWidth: 100 }}>Notes</th>
                 {Array.from({ length: WEEK_COUNT }, (_, i) => (
                   <th key={i} style={{ minWidth: 56 }}>Wk {i + 1}</th>
                 ))}
@@ -370,9 +375,15 @@ export default function ProgrammePage({ clientId: propClientId }) {
                     </span>
                   </td>
                   <td>
-                    <input className="cell-input ex ex-name-input"
-                      value={ex.name} placeholder="Exercise name"
-                      onChange={e => onCellChange(ei, 'name', e.target.value)} />
+                    <textarea
+                      className="cell-input ex ex-name-input"
+                      value={ex.name}
+                      placeholder="Exercise name"
+                      rows={1}
+                      onChange={e => onCellChange(ei, 'name', e.target.value)}
+                      onInput={autoResize}
+                      style={{ resize: 'none', overflow: 'hidden', lineHeight: '1.4', display: 'block' }}
+                    />
                   </td>
                   <td>
                     <input className="cell-input"
@@ -380,9 +391,15 @@ export default function ProgrammePage({ clientId: propClientId }) {
                       onChange={e => onCellChange(ei, 'sets_reps', e.target.value)} />
                   </td>
                   <td>
-                    <input className="cell-input"
-                      value={ex.notes} placeholder="—"
-                      onChange={e => onCellChange(ei, 'notes', e.target.value)} />
+                    <textarea
+                      className="cell-input"
+                      value={ex.notes}
+                      placeholder="—"
+                      rows={1}
+                      onChange={e => onCellChange(ei, 'notes', e.target.value)}
+                      onInput={autoResize}
+                      style={{ resize: 'none', overflow: 'hidden', lineHeight: '1.4', display: 'block' }}
+                    />
                   </td>
                   {Array.from({ length: WEEK_COUNT }, (_, wi) => (
                     <td key={wi}>
