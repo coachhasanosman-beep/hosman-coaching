@@ -217,15 +217,22 @@ h3 { font-size: 15px; font-weight: 500; color: var(--text); }
   white-space: nowrap; border-bottom: 0.5px solid var(--border2);
   position: sticky; top: 0; z-index: 2;
 }
-.prog-table td { padding: 8px 6px; border-bottom: 0.5px solid var(--border); vertical-align: middle; }
+.prog-table td {
+  padding: 8px 6px;
+  border-bottom: 0.5px solid var(--border);
+  vertical-align: top;
+  white-space: normal;
+  word-break: break-word;
+}
 .prog-table tr:last-child td { border-bottom: none; }
 .prog-table tr:hover td { background: rgba(255,255,255,0.015); }
 .cell-input {
   background: transparent; border: none; color: var(--text);
   font-size: 11px; width: 100%; min-width: 44px;
   font-family: 'Montserrat', sans-serif; outline: none;
+  white-space: normal; word-break: break-word;
 }
-.cell-input.ex { min-width: 110px; font-size: 12px; font-weight: 500; }
+.cell-input.ex { min-width: 110px; font-size: 12px; font-weight: 500; white-space: normal; word-break: break-word; }
 .cell-input:focus { background: var(--surface2); outline: 1px solid var(--gold); border-radius: 3px; padding: 2px 4px; }
 .cell-input::placeholder { color: var(--text3); }
 
