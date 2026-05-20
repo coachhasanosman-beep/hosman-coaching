@@ -95,7 +95,6 @@ export default function CoachSessionManager({ clientId, client }) {
       newRemaining = pkg.sessions_total - newUsed
     }
 
-    // Send threshold email if applicable
     const { data: { session: authSession } } = await supabase.auth.getSession()
     await sendThresholdEmail(
       import.meta.env.VITE_SUPABASE_URL,
@@ -107,6 +106,16 @@ export default function CoachSessionManager({ clientId, client }) {
     )
 
     toast.success('Session marked complete')
+    load()
+  }
+
+  async function undoComplete(id) {
+    await supabase.from('scheduled_sessions').update({ status: 'scheduled' }).eq('id', id)
+    if (pkg) {
+      const newUsed = Math.max(0, pkg.sessions_used - 1)
+      await supabase.from('packages').update({ sessions_used: newUsed }).eq('id', pkg.id)
+    }
+    toast.success('Session restored')
     load()
   }
 
@@ -244,7 +253,7 @@ export default function CoachSessionManager({ clientId, client }) {
               {format(new Date(s.starts_at), 'HH:mm')} {s.location ? `· ${s.location}` : ''} {s.type === 'solo' ? '· Client logged' : ''}
             </div>
           </div>
-          <div style={{ display: 'flex', gap: 6 }}>
+          <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
             {s.status === 'scheduled' && (
               <>
                 <button className="btn btn-ghost btn-sm" style={{ width: 'auto', padding: '6px 10px', fontSize: 10 }}
@@ -253,7 +262,13 @@ export default function CoachSessionManager({ clientId, client }) {
                   onClick={() => cancelSession(s.id)}>Cancel</button>
               </>
             )}
-            {s.status === 'completed' && <span className="tag tag-green">Completed</span>}
+            {s.status === 'completed' && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                <span className="tag tag-green">Completed</span>
+                <button className="btn btn-ghost btn-sm" style={{ width: 'auto', padding: '6px 10px', fontSize: 10 }}
+                  onClick={() => undoComplete(s.id)}>Undo</button>
+              </div>
+            )}
             {s.status === 'cancelled' && <span className="tag tag-muted">Cancelled</span>}
           </div>
         </div>
