@@ -258,18 +258,22 @@ export default function ProgrammePage({ clientId: propClientId }) {
   }
 
   function onTabDragStart(idx) { dragSrc.current = `tab-${idx}` }
-  function onTabDrop(targetIdx) {
+  async function onTabDrop(targetIdx) {
     if (!dragSrc.current?.startsWith('tab-')) return
     const fromIdx = parseInt(dragSrc.current.split('-')[1])
     if (fromIdx === targetIdx) return
+    dragSrc.current = null
     setSessions(prev => {
       const updated = [...prev]
       const [moved] = updated.splice(fromIdx, 1)
       updated.splice(targetIdx, 0, moved)
+      // Save new positions to database
+      updated.forEach((s, i) => {
+        supabase.from('programme_sessions').update({ position: i }).eq('id', s.id)
+      })
       return updated
     })
     setActiveTab(targetIdx)
-    dragSrc.current = null
   }
 
   function autoResize(e) {
