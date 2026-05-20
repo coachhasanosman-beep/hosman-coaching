@@ -66,8 +66,8 @@ serve(async (req) => {
     })
 
     const start = new Date(session.starts_at)
-    const dateStr = start.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })
-    const timeStr = start.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })
+    const dateStr = start.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric', timeZone: 'Europe/London' })
+    const timeStr = start.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', timeZone: 'Europe/London' })
 
     const subject = cancelled
       ? `Cancelled: ${session.title}`
