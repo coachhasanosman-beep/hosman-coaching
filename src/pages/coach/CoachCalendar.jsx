@@ -92,7 +92,8 @@ export default function CoachCalendar({ clients }) {
     if (!formClient || !formDate) return toast.error('Select a client and date')
     setSaving(true)
     try {
-      const starts_at = new Date(`${formDate}T${formTime}`).toISOString()
+      const localDate = new Date(`${formDate}T${formTime}:00`)
+      const starts_at = new Date(localDate.getTime() - localDate.getTimezoneOffset() * 60000).toISOString()
       const { data } = await supabase.from('scheduled_sessions').insert({
         client_id: formClient,
         title: formTitle,

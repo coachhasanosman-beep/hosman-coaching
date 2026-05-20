@@ -45,7 +45,8 @@ export default function CoachSessionManager({ clientId, client }) {
     if (!form.date) return toast.error('Date required')
     setSaving(true)
     try {
-      const starts_at = new Date(`${form.date}T${form.time}`).toISOString()
+      const localDate = new Date(`${form.date}T${form.time}:00`)
+      const starts_at = new Date(localDate.getTime() - localDate.getTimezoneOffset() * 60000).toISOString()
       const { data } = await supabase.from('scheduled_sessions').insert({
         client_id: clientId,
         title: form.title,
