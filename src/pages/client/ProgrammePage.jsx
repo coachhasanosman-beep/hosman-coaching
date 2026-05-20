@@ -23,7 +23,6 @@ export default function ProgrammePage({ clientId: propClientId }) {
 
   useEffect(() => { if (clientId) loadProgrammes() }, [clientId])
 
-  // Auto-resize all textareas after render
   useEffect(() => {
     const resize = () => {
       if (tableRef.current) {
@@ -246,7 +245,8 @@ export default function ProgrammePage({ clientId: propClientId }) {
 
   function onDragStart(idx) { dragSrc.current = idx }
   function onDrop(targetIdx) {
-    if (dragSrc.current === null || dragSrc.current === targetIdx) return
+    if (dragSrc.current === null || typeof dragSrc.current !== 'number') return
+    if (dragSrc.current === targetIdx) return
     updateSession(prev => prev.map((s, si) => {
       if (si !== activeTab) return s
       const exs = [...s.exercises]
@@ -254,6 +254,21 @@ export default function ProgrammePage({ clientId: propClientId }) {
       exs.splice(targetIdx, 0, moved)
       return { ...s, exercises: exs.map((e, i) => ({ ...e, position: i })) }
     }))
+    dragSrc.current = null
+  }
+
+  function onTabDragStart(idx) { dragSrc.current = `tab-${idx}` }
+  function onTabDrop(targetIdx) {
+    if (!dragSrc.current?.startsWith('tab-')) return
+    const fromIdx = parseInt(dragSrc.current.split('-')[1])
+    if (fromIdx === targetIdx) return
+    setSessions(prev => {
+      const updated = [...prev]
+      const [moved] = updated.splice(fromIdx, 1)
+      updated.splice(targetIdx, 0, moved)
+      return updated
+    })
+    setActiveTab(targetIdx)
     dragSrc.current = null
   }
 
@@ -314,10 +329,14 @@ export default function ProgrammePage({ clientId: propClientId }) {
         )}
       </div>
 
-      {/* Session tabs */}
-      <div className="tab-bar">
+      {/* Session tabs — draggable */}
+      <div className="tab-bar" onDragOver={e => e.preventDefault()}>
         {sessions.map((s, i) => (
-          <div key={s.id} style={{ display: 'flex', alignItems: 'center', flexShrink: 0 }}>
+          <div key={s.id}
+            style={{ display: 'flex', alignItems: 'center', flexShrink: 0, cursor: 'grab' }}
+            draggable
+            onDragStart={() => onTabDragStart(i)}
+            onDrop={e => { e.preventDefault(); onTabDrop(i) }}>
             <button
               className={`tab-btn ${i === activeTab ? 'active' : ''}`}
               onClick={() => setActiveTab(i)}
@@ -348,7 +367,7 @@ export default function ProgrammePage({ clientId: propClientId }) {
 
       <div style={{ fontSize: 10, color: 'var(--text3)', letterSpacing: '0.06em', padding: '6px 20px 4px', display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
         <i className="ti ti-pencil" style={{ fontSize: 11 }} aria-hidden="true" />
-        Tap any cell to edit · Drag <i className="ti ti-grip-vertical" style={{ fontSize: 11 }} aria-hidden="true" /> to reorder · Double-tap tab to rename · × to delete tab
+        Tap any cell to edit · Drag <i className="ti ti-grip-vertical" style={{ fontSize: 11 }} aria-hidden="true" /> to reorder rows · Drag tabs to reorder sessions · Double-tap tab to rename · × to delete
       </div>
 
       {/* Table */}
