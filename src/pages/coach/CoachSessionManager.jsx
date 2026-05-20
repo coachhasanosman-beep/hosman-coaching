@@ -20,6 +20,21 @@ async function sendCalendarInvite(session, clientEmail, clientName, cancelled = 
   }
 }
 
+async function sendThresholdEmail(supabaseUrl, authToken, clientEmail, clientName, remaining, packageSize) {
+  try {
+    await fetch(`${supabaseUrl}/functions/v1/session-threshold-email`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${authToken}`
+      },
+      body: JSON.stringify({ clientEmail, clientName, remaining, packageSize })
+    })
+  } catch (e) {
+    console.error('Threshold email failed:', e)
+  }
+}
+
 export default function CoachSessionManager({ clientId, client }) {
   const { profile } = useAuth()
   const [pkg, setPkg]     = useState(null)
@@ -45,7 +60,7 @@ export default function CoachSessionManager({ clientId, client }) {
     if (!form.date) return toast.error('Date required')
     setSaving(true)
     try {
-      const starts_at = new Date(`${formDate}T${formTime}:00`).toISOString()
+      const starts_at = new Date(`${form.date}T${form.time}`).toISOString()
       const { data } = await supabase.from('scheduled_sessions').insert({
         client_id: clientId,
         title: form.title,
@@ -72,9 +87,25 @@ export default function CoachSessionManager({ clientId, client }) {
 
   async function markComplete(id) {
     await supabase.from('scheduled_sessions').update({ status: 'completed' }).eq('id', id)
+
+    let newRemaining = remaining
     if (pkg) {
-      await supabase.from('packages').update({ sessions_used: pkg.sessions_used + 1 }).eq('id', pkg.id)
+      const newUsed = pkg.sessions_used + 1
+      await supabase.from('packages').update({ sessions_used: newUsed }).eq('id', pkg.id)
+      newRemaining = pkg.sessions_total - newUsed
     }
+
+    // Send threshold email if applicable
+    const { data: { session: authSession } } = await supabase.auth.getSession()
+    await sendThresholdEmail(
+      import.meta.env.VITE_SUPABASE_URL,
+      authSession.access_token,
+      client.email,
+      client.full_name,
+      newRemaining,
+      pkg?.sessions_total || 1
+    )
+
     toast.success('Session marked complete')
     load()
   }
