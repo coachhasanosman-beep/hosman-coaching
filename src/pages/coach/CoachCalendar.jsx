@@ -6,7 +6,7 @@ import toast from 'react-hot-toast'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../hooks/useAuth'
 
-const HOURS = Array.from({ length: 14 }, (_, i) => i + 7)
+const HOURS = Array.from({ length: 15 }, (_, i) => i + 6)
 const CLIENT_COLORS = [
   '#c9a96e', '#4eca87', '#6eafc9', '#c96e9a', '#9a6ec9', '#c9b96e', '#6ec9b9'
 ]
