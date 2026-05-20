@@ -27,7 +27,7 @@ export default function CoachSessionManager({ clientId, client }) {
   const [showForm, setShowForm] = useState(false)
   const [showPkg, setShowPkg]   = useState(false)
   const [form, setForm] = useState({ title: 'Session with Hasan', location: '', date: '', time: '10:00', duration: 60 })
-  const [pkgForm, setPkgForm] = useState({ sessions_total: 12, price_paid: '' })
+  const [pkgForm, setPkgForm] = useState({ sessions_total: '', price_paid: '' })
   const [saving, setSaving] = useState(false)
 
   useEffect(() => { load() }, [clientId])
@@ -57,7 +57,6 @@ export default function CoachSessionManager({ clientId, client }) {
         created_by: profile.id
       }).select().single()
 
-      // Send calendar invite
       await sendCalendarInvite(data, client.email, client.full_name, false)
 
       toast.success('Session scheduled — calendar invite sent')
@@ -83,15 +82,15 @@ export default function CoachSessionManager({ clientId, client }) {
   async function cancelSession(id) {
     const sess = sessions.find(s => s.id === id)
     await supabase.from('scheduled_sessions').update({ status: 'cancelled' }).eq('id', id)
-
-    // Send cancellation
     if (sess) await sendCalendarInvite(sess, client.email, client.full_name, true)
-
     toast.success('Session cancelled — client notified')
     load()
   }
 
   async function addPackage() {
+    if (!pkgForm.sessions_total || parseInt(pkgForm.sessions_total) < 1) {
+      return toast.error('Enter number of sessions')
+    }
     setSaving(true)
     try {
       await supabase.from('packages').insert({
@@ -100,7 +99,8 @@ export default function CoachSessionManager({ clientId, client }) {
         sessions_used: 0,
         price_paid: pkgForm.price_paid ? parseFloat(pkgForm.price_paid) : null
       })
-      toast.success('Package added')
+      toast.success(`${pkgForm.sessions_total} sessions added`)
+      setPkgForm({ sessions_total: '', price_paid: '' })
       setShowPkg(false)
       load()
     } catch (e) {
@@ -119,7 +119,7 @@ export default function CoachSessionManager({ clientId, client }) {
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
           <div className="section-label">Package</div>
           <button className="btn btn-ghost btn-sm" style={{ width: 'auto' }} onClick={() => setShowPkg(!showPkg)}>
-            {showPkg ? 'Cancel' : pkg ? 'Adjust' : 'Add package'}
+            {showPkg ? 'Cancel' : pkg ? 'Add sessions' : 'Add package'}
           </button>
         </div>
 
@@ -140,21 +140,21 @@ export default function CoachSessionManager({ clientId, client }) {
 
         {showPkg && (
           <div className="card">
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 12 }}>
-              <div>
-                <label className="input-label">Sessions</label>
-                <select className="input" value={pkgForm.sessions_total}
-                  onChange={e => setPkgForm(f => ({ ...f, sessions_total: e.target.value }))}>
-                  {[1,12,24,48].map(n => <option key={n} value={n}>{n}</option>)}
-                </select>
-              </div>
-              <div>
-                <label className="input-label">Price paid (£)</label>
-                <input className="input" type="number" placeholder="e.g. 1620" value={pkgForm.price_paid}
-                  onChange={e => setPkgForm(f => ({ ...f, price_paid: e.target.value }))} />
-              </div>
+            <div style={{ marginBottom: 8 }}>
+              <label className="input-label">Number of sessions to add</label>
+              <input className="input" type="number" min="1" placeholder="e.g. 3"
+                value={pkgForm.sessions_total}
+                onChange={e => setPkgForm(f => ({ ...f, sessions_total: e.target.value }))} />
             </div>
-            <button className="btn btn-primary btn-sm" onClick={addPackage} disabled={saving}>Save package</button>
+            <div style={{ marginBottom: 12 }}>
+              <label className="input-label">Price paid (£) — optional</label>
+              <input className="input" type="number" placeholder="e.g. 420"
+                value={pkgForm.price_paid}
+                onChange={e => setPkgForm(f => ({ ...f, price_paid: e.target.value }))} />
+            </div>
+            <button className="btn btn-primary btn-sm" onClick={addPackage} disabled={saving}>
+              {saving ? 'Saving…' : 'Add sessions'}
+            </button>
           </div>
         )}
       </div>
