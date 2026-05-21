@@ -47,6 +47,24 @@ export default function CoachApp() {
     }
   }
 
+  async function resendWelcome(client) {
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      const res = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/resend-welcome`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`
+        },
+        body: JSON.stringify({ email: client.email, full_name: client.full_name })
+      })
+      if (!res.ok) throw new Error(await res.text())
+      toast.success(`Welcome email sent to ${client.full_name}`)
+    } catch (err) {
+      toast.error(err.message || 'Failed to send')
+    }
+  }
+
   function initials(name) {
     return name?.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase() || '?'
   }
@@ -107,16 +125,25 @@ export default function CoachApp() {
           <div style={{ color: 'var(--text3)', fontSize: 12 }}>Loading…</div>
         ) : (
           clients.map(c => (
-            <div key={c.id}
-              className={`client-row ${activeClient?.id === c.id ? 'active' : ''}`}
-              onClick={() => selectClient(c)}>
-              <div className="avatar">{initials(c.full_name)}</div>
-              <div style={{ flex: 1, overflow: 'hidden' }}>
-                <div style={{ fontSize: 13, fontWeight: 500, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                  {c.full_name}
+            <div key={c.id} style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+              <div
+                className={`client-row ${activeClient?.id === c.id ? 'active' : ''}`}
+                style={{ flex: 1, cursor: 'pointer' }}
+                onClick={() => selectClient(c)}>
+                <div className="avatar">{initials(c.full_name)}</div>
+                <div style={{ flex: 1, overflow: 'hidden' }}>
+                  <div style={{ fontSize: 13, fontWeight: 500, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                    {c.full_name}
+                  </div>
+                  <div style={{ fontSize: 10, color: 'var(--text3)', marginTop: 1 }}>{c.email}</div>
                 </div>
-                <div style={{ fontSize: 10, color: 'var(--text3)', marginTop: 1 }}>{c.email}</div>
               </div>
+              <button
+                title="Resend welcome email"
+                onClick={() => resendWelcome(c)}
+                style={{ background: 'none', border: 'none', color: 'var(--text3)', cursor: 'pointer', padding: '4px', opacity: 0.5, flexShrink: 0 }}>
+                <i className="ti ti-mail" style={{ fontSize: 14 }} />
+              </button>
             </div>
           ))
         )}
@@ -152,7 +179,6 @@ export default function CoachApp() {
 
       {/* Main panel */}
       <main style={{ flex: 1, overflowY: 'auto', padding: isMobile ? '16px' : '28px 32px', display: 'flex', flexDirection: 'column' }}>
-        {/* Mobile toggle button */}
         {isMobile && (
           <button onClick={() => setSidebarOpen(true)}
             style={{
