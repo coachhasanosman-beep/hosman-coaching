@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../../lib/supabase'
+import toast from 'react-hot-toast'
 
 export default function CoachOverview({ clients, onSelectClient }) {
   const [summaries, setSummaries] = useState({})
@@ -20,6 +21,25 @@ export default function CoachOverview({ clients, onSelectClient }) {
         next: schedRes.data?.[0]
       }
     }))
+  }
+
+  async function resendWelcome(e, client) {
+    e.stopPropagation()
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      const res = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/resend-welcome`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`
+        },
+        body: JSON.stringify({ email: client.email, full_name: client.full_name })
+      })
+      if (!res.ok) throw new Error(await res.text())
+      toast.success(`Login details sent to ${client.full_name}`)
+    } catch (err) {
+      toast.error(err.message || 'Failed to send')
+    }
   }
 
   function initials(name) {
@@ -47,7 +67,15 @@ export default function CoachOverview({ clients, onSelectClient }) {
                     <div style={{ fontSize: 11, color: 'var(--text3)' }}>{c.email}</div>
                   </div>
                 </div>
-                <i className="ti ti-chevron-right" style={{ color: 'var(--text3)' }} aria-hidden="true" />
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <button
+                    title="Resend login details"
+                    onClick={e => resendWelcome(e, c)}
+                    style={{ background: 'none', border: '0.5px solid var(--border2)', borderRadius: 6, color: 'var(--text3)', cursor: 'pointer', padding: '6px 8px', display: 'flex', alignItems: 'center', gap: 4, fontSize: 11, fontFamily: 'Montserrat, sans-serif' }}>
+                    <i className="ti ti-mail" style={{ fontSize: 13 }} />
+                  </button>
+                  <i className="ti ti-chevron-right" style={{ color: 'var(--text3)' }} aria-hidden="true" />
+                </div>
               </div>
               <div className="divider" />
               <div style={{ display: 'flex', gap: 16 }}>
