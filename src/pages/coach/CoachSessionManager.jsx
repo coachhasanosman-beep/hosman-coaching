@@ -88,7 +88,7 @@ export default function CoachSessionManager({ clientId, client }) {
   async function markComplete(id) {
     await supabase.from('scheduled_sessions').update({ status: 'completed' }).eq('id', id)
 
-    let newRemaining = remaining
+    let newRemaining = -1
     if (pkg) {
       const newUsed = pkg.sessions_used + 1
       await supabase.from('packages').update({ sessions_used: newUsed }).eq('id', pkg.id)
