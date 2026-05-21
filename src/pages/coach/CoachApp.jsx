@@ -8,13 +8,14 @@ import CoachCalendar   from './CoachCalendar'
 
 export default function CoachApp() {
   const { profile } = useAuth()
-  const [clients, setClients]         = useState([])
-  const [activeClient, setActive]     = useState(null)
+  const [clients, setClients]           = useState([])
+  const [activeClient, setActive]       = useState(null)
   const [showCalendar, setShowCalendar] = useState(false)
-  const [sidebarOpen, setSidebarOpen] = useState(true)
-  const [inviting, setInviting]       = useState(false)
-  const [inviteForm, setInviteForm]   = useState({ name: '', email: '' })
-  const [loading, setLoading]         = useState(true)
+  const [showOverview, setShowOverview] = useState(true)
+  const [sidebarOpen, setSidebarOpen]   = useState(true)
+  const [inviting, setInviting]         = useState(false)
+  const [inviteForm, setInviteForm]     = useState({ name: '', email: '' })
+  const [loading, setLoading]           = useState(true)
 
   const isMobile = window.innerWidth < 768
 
@@ -72,11 +73,20 @@ export default function CoachApp() {
   function selectClient(c) {
     setActive(c)
     setShowCalendar(false)
+    setShowOverview(false)
     if (isMobile) setSidebarOpen(false)
   }
 
   function selectCalendar() {
     setShowCalendar(true)
+    setActive(null)
+    setShowOverview(false)
+    if (isMobile) setSidebarOpen(false)
+  }
+
+  function selectOverview() {
+    setShowOverview(true)
+    setShowCalendar(false)
     setActive(null)
     if (isMobile) setSidebarOpen(false)
   }
@@ -109,11 +119,29 @@ export default function CoachApp() {
           <div style={{ fontSize: 10, color: 'var(--text3)', letterSpacing: '0.1em', marginTop: 2 }}>COACH DASHBOARD</div>
         </div>
 
+        {/* All Clients */}
+        <button
+          onClick={selectOverview}
+          className={`client-row ${showOverview && !activeClient && !showCalendar ? 'active' : ''}`}
+          style={{ marginBottom: 8, width: '100%', textAlign: 'left', background: 'none', border: 'none', cursor: 'pointer' }}>
+          <div className="avatar" style={{
+            background: showOverview && !activeClient ? 'var(--gold-bg)' : 'var(--surface2)',
+            border: showOverview && !activeClient ? '0.5px solid var(--gold-bdr)' : '0.5px solid transparent'
+          }}>
+            <i className="ti ti-users" style={{ fontSize: 16, color: showOverview && !activeClient ? 'var(--gold)' : 'var(--text3)' }} />
+          </div>
+          <div style={{ fontSize: 13, fontWeight: 500, color: showOverview && !activeClient ? 'var(--text)' : 'var(--text3)' }}>All clients</div>
+        </button>
+
+        {/* Calendar */}
         <button
           onClick={selectCalendar}
           className={`client-row ${showCalendar ? 'active' : ''}`}
           style={{ marginBottom: 16, width: '100%', textAlign: 'left', background: 'none', border: 'none', cursor: 'pointer' }}>
-          <div className="avatar" style={{ background: showCalendar ? 'var(--gold-bg)' : 'var(--surface2)', border: showCalendar ? '0.5px solid var(--gold-bdr)' : '0.5px solid transparent' }}>
+          <div className="avatar" style={{
+            background: showCalendar ? 'var(--gold-bg)' : 'var(--surface2)',
+            border: showCalendar ? '0.5px solid var(--gold-bdr)' : '0.5px solid transparent'
+          }}>
             <i className="ti ti-calendar" style={{ fontSize: 16, color: showCalendar ? 'var(--gold)' : 'var(--text3)' }} />
           </div>
           <div style={{ fontSize: 13, fontWeight: 500, color: showCalendar ? 'var(--text)' : 'var(--text3)' }}>Calendar</div>
@@ -195,7 +223,7 @@ export default function CoachApp() {
         {showCalendar
           ? <CoachCalendar clients={clients} />
           : activeClient
-            ? <CoachClientView client={activeClient} onBack={() => setActive(null)} />
+            ? <CoachClientView client={activeClient} onBack={() => { setActive(null); setShowOverview(true) }} />
             : <CoachOverview clients={clients} onSelectClient={selectClient} />
         }
       </main>

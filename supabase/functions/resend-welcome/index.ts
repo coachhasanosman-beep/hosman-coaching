@@ -6,6 +6,15 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 }
 
+function generatePassword() {
+  const chars = 'ABCDEFGHJKMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789'
+  let password = ''
+  for (let i = 0; i < 10; i++) {
+    password += chars.charAt(Math.floor(Math.random() * chars.length))
+  }
+  return password
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders })
 
@@ -23,6 +32,21 @@ serve(async (req) => {
     if (profile?.role !== 'coach') return new Response('Forbidden', { status: 403, headers: corsHeaders })
 
     const { email, full_name } = await req.json()
+
+    // Generate new temp password and update their account
+    const tempPassword = generatePassword()
+    const adminSupabase = createClient(
+      Deno.env.get('SUPABASE_URL')!,
+      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
+    )
+
+    // Find user and reset their password
+    const { data: users } = await adminSupabase.auth.admin.listUsers()
+    const clientUser = users?.users?.find(u => u.email === email)
+    if (clientUser) {
+      await adminSupabase.auth.admin.updateUserById(clientUser.id, { password: tempPassword })
+    }
+
     const resendKey = Deno.env.get('RESEND_API_KEY')!
 
     const res = await fetch('https://api.resend.com/emails', {
@@ -34,7 +58,7 @@ serve(async (req) => {
       body: JSON.stringify({
         from: 'HOSMAN Coaching <noreply@hosmancoaching.com>',
         to: [email],
-        subject: 'Your HOSMAN Coaching app access',
+        subject: 'Your HOSMAN Coaching login details',
         html: `
           <div style="font-family:sans-serif;max-width:480px;margin:0 auto;color:#1a1a1a">
             <div style="background:#1a1a1a;padding:24px;text-align:center">
@@ -43,7 +67,13 @@ serve(async (req) => {
             </div>
             <div style="padding:32px 24px">
               <h2 style="margin:0 0 16px">Hi ${full_name},</h2>
-              <p>Here's a reminder of how to access your HOSMAN Coaching app.</p>
+              <p>Here are your updated login details for the HOSMAN Coaching app:</p>
+              <div style="background:#f5f5f5;border-radius:8px;padding:20px;margin:20px 0;text-align:center">
+                <p style="margin:0 0 8px;font-size:12px;color:#888;letter-spacing:0.1em;text-transform:uppercase">Email</p>
+                <p style="margin:0 0 16px;font-weight:600;font-size:15px">${email}</p>
+                <p style="margin:0 0 8px;font-size:12px;color:#888;letter-spacing:0.1em;text-transform:uppercase">Temporary password</p>
+                <p style="margin:0;font-weight:600;font-size:20px;letter-spacing:0.1em;color:#c9a96e">${tempPassword}</p>
+              </div>
               <div style="text-align:center;margin:28px 0">
                 <a href="https://hosman-coaching.vercel.app"
                   style="background:#c9a96e;color:#1a1a1a;padding:14px 32px;border-radius:8px;text-decoration:none;font-weight:600;font-size:14px;letter-spacing:0.06em">
@@ -51,11 +81,10 @@ serve(async (req) => {
                 </a>
               </div>
               <p style="color:#888;font-size:12px;text-align:center">
-                Log in with your email address at:<br/>
-                <span style="color:#c9a96e">https://hosman-coaching.vercel.app</span>
+                Once logged in, go to <strong>Settings</strong> to change your password.
               </p>
-              <p style="color:#888;font-size:12px;text-align:center;margin-top:8px">
-                If you've forgotten your password, use the "Forgot password?" link on the login page.
+              <p style="color:#aaa;font-size:11px;text-align:center;margin-top:8px">
+                https://hosman-coaching.vercel.app
               </p>
               <p style="margin-top:24px;color:#888;font-size:12px">HOSMAN Premium Coaching</p>
             </div>
