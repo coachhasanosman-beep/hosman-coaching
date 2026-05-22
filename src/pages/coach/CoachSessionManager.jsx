@@ -150,11 +150,43 @@ export default function CoachSessionManager({ clientId, client }) {
     }
   }
 
-  const remaining = pkg ? pkg.sessions_total - pkg.sessions_used : null
+  const remaining = pkg ? pkg.sessions_total - pkg.sessions_used : 0
+  const total = pkg?.sessions_total || 0
+  const pct = total > 0 ? Math.max(0, remaining) / total : 0
+  const circumference = 2 * Math.PI * 66
+  const dash = circumference * pct
 
   return (
     <div style={{ flex: 1, overflowY: 'auto' }}>
-      {/* Package */}
+
+      {/* Session ring */}
+      {pkg && (
+        <div style={{ display: 'flex', justifyContent: 'center', padding: '16px 0 8px' }}>
+          <svg width="160" height="160" viewBox="0 0 160 160">
+            <circle cx="80" cy="80" r="66" fill="none" stroke="var(--surface2)" strokeWidth="12"/>
+            <circle cx="80" cy="80" r="66" fill="none"
+              stroke={remaining <= 0 ? 'var(--red)' : remaining <= 3 ? 'var(--gold)' : 'var(--gold)'}
+              strokeWidth="12"
+              strokeDasharray={`${dash} ${circumference}`}
+              strokeLinecap="round"
+              transform="rotate(-90 80 80)"
+              style={{ transition: 'stroke-dasharray 0.6s ease' }}/>
+            <text x="80" y="72" textAnchor="middle" fontSize="32" fontWeight="500"
+              fill={remaining <= 0 ? 'var(--red)' : 'var(--text)'}
+              fontFamily="Montserrat, sans-serif">{remaining}</text>
+            <text x="80" y="92" textAnchor="middle" fontSize="11"
+              fill="var(--text3)" fontFamily="Montserrat, sans-serif">of {total} remaining</text>
+          </svg>
+        </div>
+      )}
+
+      {!pkg && (
+        <div style={{ textAlign: 'center', padding: '20px 0', color: 'var(--text3)', fontSize: 13 }}>
+          No active package
+        </div>
+      )}
+
+      {/* Package actions */}
       <div style={{ marginBottom: 28 }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
           <div className="section-label">Package</div>
@@ -164,17 +196,8 @@ export default function CoachSessionManager({ clientId, client }) {
         </div>
 
         {pkg && !showPkg && (
-          <div className="card row">
-            <div>
-              <h3 style={{ marginBottom: 2 }}>{pkg.sessions_total}-session package</h3>
-              <div style={{ fontSize: 12, color: 'var(--text3)' }}>
-                {pkg.sessions_used} used · {remaining} remaining
-              </div>
-            </div>
-            <div style={{ textAlign: 'right' }}>
-              <div style={{ fontSize: 28, fontWeight: 500, color: remaining <= 3 ? 'var(--red)' : 'var(--text)' }}>{remaining}</div>
-              <div style={{ fontSize: 11, color: 'var(--text3)' }}>left</div>
-            </div>
+          <div style={{ fontSize: 12, color: 'var(--text3)', textAlign: 'center', marginBottom: 8 }}>
+            {pkg.sessions_used} used · {pkg.sessions_total} total
           </div>
         )}
 
