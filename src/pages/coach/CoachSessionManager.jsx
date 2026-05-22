@@ -155,36 +155,33 @@ export default function CoachSessionManager({ clientId, client }) {
   const pct = total > 0 ? Math.max(0, remaining) / total : 0
   const circumference = 2 * Math.PI * 66
   const dash = circumference * pct
+  const ringColor = !pkg || remaining <= 0 ? 'var(--red)' : remaining <= 3 ? 'var(--gold)' : 'var(--gold)'
 
   return (
     <div style={{ flex: 1, overflowY: 'auto' }}>
 
-      {/* Session ring */}
-      {pkg && (
-        <div style={{ display: 'flex', justifyContent: 'center', padding: '16px 0 8px' }}>
-          <svg width="160" height="160" viewBox="0 0 160 160">
-            <circle cx="80" cy="80" r="66" fill="none" stroke="var(--surface2)" strokeWidth="12"/>
+      {/* Session ring — always visible */}
+      <div style={{ display: 'flex', justifyContent: 'center', padding: '16px 0 8px' }}>
+        <svg width="160" height="160" viewBox="0 0 160 160">
+          <circle cx="80" cy="80" r="66" fill="none" stroke="var(--surface2)" strokeWidth="12"/>
+          {pkg && (
             <circle cx="80" cy="80" r="66" fill="none"
-              stroke={remaining <= 0 ? 'var(--red)' : remaining <= 3 ? 'var(--gold)' : 'var(--gold)'}
+              stroke={ringColor}
               strokeWidth="12"
               strokeDasharray={`${dash} ${circumference}`}
               strokeLinecap="round"
               transform="rotate(-90 80 80)"
               style={{ transition: 'stroke-dasharray 0.6s ease' }}/>
-            <text x="80" y="72" textAnchor="middle" fontSize="32" fontWeight="500"
-              fill={remaining <= 0 ? 'var(--red)' : 'var(--text)'}
-              fontFamily="Montserrat, sans-serif">{remaining}</text>
-            <text x="80" y="92" textAnchor="middle" fontSize="11"
-              fill="var(--text3)" fontFamily="Montserrat, sans-serif">of {total} remaining</text>
-          </svg>
-        </div>
-      )}
-
-      {!pkg && (
-        <div style={{ textAlign: 'center', padding: '20px 0', color: 'var(--text3)', fontSize: 13 }}>
-          No active package
-        </div>
-      )}
+          )}
+          <text x="80" y="72" textAnchor="middle" fontSize="32" fontWeight="500"
+            fill={!pkg || remaining <= 0 ? 'var(--red)' : 'var(--text)'}
+            fontFamily="Montserrat, sans-serif">{remaining}</text>
+          <text x="80" y="92" textAnchor="middle" fontSize="11"
+            fill="var(--text3)" fontFamily="Montserrat, sans-serif">
+            {pkg ? `of ${total} remaining` : 'no package'}
+          </text>
+        </svg>
+      </div>
 
       {/* Package actions */}
       <div style={{ marginBottom: 28 }}>
