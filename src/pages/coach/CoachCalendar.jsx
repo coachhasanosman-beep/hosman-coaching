@@ -10,26 +10,32 @@ const HOURS = Array.from({ length: 15 }, (_, i) => i + 6)
 const CLIENT_COLORS = [
   '#c9a96e', '#4eca87', '#6eafc9', '#c96e9a', '#9a6ec9', '#c9b96e', '#6ec9b9'
 ]
+const BLOCK_COLOR = '#555555'
 
 export default function CoachCalendar({ clients }) {
   const { profile } = useAuth()
-  const [view, setView]           = useState('week')
-  const [current, setCurrent]     = useState(new Date())
-  const [sessions, setSessions]   = useState([])
-  const [showForm, setShowForm]   = useState(false)
-  const [formDate, setFormDate]   = useState('')
-  const [formTime, setFormTime]   = useState('10:00')
+  const [view, setView]             = useState('week')
+  const [current, setCurrent]       = useState(new Date())
+  const [sessions, setSessions]     = useState([])
+  const [coachEvents, setCoachEvents] = useState([])
+  const [showForm, setShowForm]     = useState(false)
+  const [showBlockForm, setShowBlockForm] = useState(false)
+  const [formDate, setFormDate]     = useState('')
+  const [formTime, setFormTime]     = useState('10:00')
   const [formClient, setFormClient] = useState('')
-  const [formTitle, setFormTitle] = useState('Session with Hasan')
+  const [formTitle, setFormTitle]   = useState('Session with Hasan')
   const [formLocation, setFormLocation] = useState('')
   const [formDuration, setFormDuration] = useState(60)
-  const [saving, setSaving]       = useState(false)
+  const [blockForm, setBlockForm]   = useState({ title: '', notes: '', date: '', time: '09:00', duration: 60 })
+  const [saving, setSaving]         = useState(false)
   const [selectedSession, setSelectedSession] = useState(null)
+  const [selectedEvent, setSelectedEvent] = useState(null)
   const dragSession = useRef(null)
+  const dragEvent = useRef(null)
 
-  useEffect(() => { loadSessions() }, [current, view])
+  useEffect(() => { loadAll() }, [current, view])
 
-  async function loadSessions() {
+  async function loadAll() {
     let start, end
     if (view === 'week') {
       start = startOfWeek(current, { weekStartsOn: 1 })
@@ -38,13 +44,21 @@ export default function CoachCalendar({ clients }) {
       start = startOfMonth(current)
       end = endOfMonth(current)
     }
-    const { data } = await supabase
-      .from('scheduled_sessions')
-      .select('*, profiles:client_id(full_name)')
-      .gte('starts_at', start.toISOString())
-      .lte('starts_at', end.toISOString())
-      .order('starts_at')
-    setSessions(data || [])
+
+    const [sessRes, evtRes] = await Promise.all([
+      supabase.from('scheduled_sessions')
+        .select('*, profiles:client_id(full_name)')
+        .gte('starts_at', start.toISOString())
+        .lte('starts_at', end.toISOString())
+        .order('starts_at'),
+      supabase.from('coach_events')
+        .select('*')
+        .gte('starts_at', start.toISOString())
+        .lte('starts_at', end.toISOString())
+        .order('starts_at')
+    ])
+    setSessions(sessRes.data || [])
+    setCoachEvents(evtRes.data || [])
   }
 
   function clientColor(clientId) {
@@ -62,7 +76,9 @@ export default function CoachCalendar({ clients }) {
     setFormTime(`${String(hour).padStart(2, '0')}:00`)
     setFormClient(clients[0]?.id || '')
     setShowForm(true)
+    setShowBlockForm(false)
     setSelectedSession(null)
+    setSelectedEvent(null)
   }
 
   function handleDayClick(date) {
@@ -70,7 +86,9 @@ export default function CoachCalendar({ clients }) {
     setFormTime('10:00')
     setFormClient(clients[0]?.id || '')
     setShowForm(true)
+    setShowBlockForm(false)
     setSelectedSession(null)
+    setSelectedEvent(null)
   }
 
   async function sendCalendarInvite(session, clientEmail, clientName, cancelled = false) {
@@ -78,11 +96,8 @@ export default function CoachCalendar({ clients }) {
       const { data: { session: authSession } } = await supabase.auth.getSession()
       await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/send-calendar-invite`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${authSession.access_token}`
-        },
-        body: JSON.stringify({ session, clientEmail: clientEmail, clientName: clientName, cancelled })
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${authSession.access_token}` },
+        body: JSON.stringify({ session, clientEmail, clientName, cancelled })
       })
     } catch (e) {
       console.error('Calendar invite failed:', e)
@@ -95,24 +110,16 @@ export default function CoachCalendar({ clients }) {
     try {
       const starts_at = new Date(`${formDate}T${formTime}`).toISOString()
       const { data } = await supabase.from('scheduled_sessions').insert({
-        client_id: formClient,
-        title: formTitle,
-        location: formLocation,
-        starts_at,
-        duration_min: formDuration,
-        type: 'coached',
-        status: 'scheduled',
-        created_by: profile.id
+        client_id: formClient, title: formTitle, location: formLocation,
+        starts_at, duration_min: formDuration, type: 'coached', status: 'scheduled', created_by: profile.id
       }).select().single()
 
       const client = clients.find(c => c.id === formClient)
-      if (client) {
-        await sendCalendarInvite(data, client.email, client.full_name, false)
-      }
+      if (client) await sendCalendarInvite(data, client.email, client.full_name, false)
 
       toast.success('Session scheduled — calendar invite sent')
       setShowForm(false)
-      loadSessions()
+      loadAll()
     } catch (e) {
       toast.error('Failed to schedule')
     } finally {
@@ -120,37 +127,69 @@ export default function CoachCalendar({ clients }) {
     }
   }
 
+  async function saveBlockEvent() {
+    if (!blockForm.title || !blockForm.date) return toast.error('Title and date required')
+    setSaving(true)
+    try {
+      const starts_at = new Date(`${blockForm.date}T${blockForm.time}`).toISOString()
+      await supabase.from('coach_events').insert({
+        coach_id: profile.id,
+        title: blockForm.title,
+        notes: blockForm.notes,
+        starts_at,
+        duration_min: parseInt(blockForm.duration)
+      })
+      toast.success('Event added')
+      setShowBlockForm(false)
+      setBlockForm({ title: '', notes: '', date: '', time: '09:00', duration: 60 })
+      loadAll()
+    } catch (e) {
+      toast.error('Failed to add event')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  async function deleteBlockEvent(id) {
+    if (!window.confirm('Delete this event?')) return
+    await supabase.from('coach_events').delete().eq('id', id)
+    toast.success('Event deleted')
+    setSelectedEvent(null)
+    loadAll()
+  }
+
   async function rescheduleSession(session, newDate, newHour) {
     const old = parseISO(session.starts_at)
     const newStarts = new Date(newDate)
     newStarts.setHours(newHour, getMinutes(old), 0, 0)
     const starts_at = newStarts.toISOString()
-
     await supabase.from('scheduled_sessions').update({ starts_at }).eq('id', session.id)
-
-    const updatedSession = { ...session, starts_at }
     const client = clients.find(c => c.id === session.client_id)
-    if (client) {
-      await sendCalendarInvite(updatedSession, client.email, client.full_name, false)
-    }
-
+    if (client) await sendCalendarInvite({ ...session, starts_at }, client.email, client.full_name, false)
     toast.success('Session rescheduled — client notified')
-    loadSessions()
+    loadAll()
   }
 
-  async function deleteSession(id) {
+  async function rescheduleEvent(event, newDate, newHour) {
+    const old = parseISO(event.starts_at)
+    const newStarts = new Date(newDate)
+    newStarts.setHours(newHour, getMinutes(old), 0, 0)
+    await supabase.from('coach_events').update({ starts_at: newStarts.toISOString() }).eq('id', event.id)
+    toast.success('Event rescheduled')
+    loadAll()
+  }
+
+  async function cancelSession(id) {
     if (!window.confirm('Cancel this session?')) return
     const sess = sessions.find(s => s.id === id)
     await supabase.from('scheduled_sessions').update({ status: 'cancelled' }).eq('id', id)
-
     if (sess) {
       const client = clients.find(c => c.id === sess.client_id)
       if (client) await sendCalendarInvite(sess, client.email, client.full_name, true)
     }
-
     toast.success('Session cancelled — client notified')
     setSelectedSession(null)
-    loadSessions()
+    loadAll()
   }
 
   function WeekView() {
@@ -176,6 +215,10 @@ export default function CoachCalendar({ clients }) {
                 const sd = parseISO(s.starts_at)
                 return isSameDay(sd, d) && getHours(sd) === hour && s.status !== 'cancelled'
               })
+              const slotEvents = coachEvents.filter(e => {
+                const ed = parseISO(e.starts_at)
+                return isSameDay(ed, d) && getHours(ed) === hour
+              })
               return (
                 <div key={d.toISOString()}
                   onClick={() => handleSlotClick(d, hour)}
@@ -185,20 +228,30 @@ export default function CoachCalendar({ clients }) {
                     if (dragSession.current) {
                       rescheduleSession(dragSession.current, d, hour)
                       dragSession.current = null
+                    } else if (dragEvent.current) {
+                      rescheduleEvent(dragEvent.current, d, hour)
+                      dragEvent.current = null
                     }
                   }}
                   style={{ borderLeft: '0.5px solid var(--border)', padding: '2px 3px', cursor: 'pointer', minHeight: 56 }}>
                   {slotSessions.map(s => (
                     <div key={s.id}
                       draggable
-                      onDragStart={e => {
-                        e.stopPropagation()
-                        dragSession.current = s
-                      }}
-                      onClick={e => { e.stopPropagation(); setSelectedSession(s); setShowForm(false) }}
+                      onDragStart={e => { e.stopPropagation(); dragSession.current = s }}
+                      onClick={e => { e.stopPropagation(); setSelectedSession(s); setSelectedEvent(null); setShowForm(false); setShowBlockForm(false) }}
                       style={{ background: clientColor(s.client_id), borderRadius: 4, padding: '2px 5px', marginBottom: 2, fontSize: 10, fontWeight: 600, color: '#1a1a1a', cursor: 'grab', lineHeight: 1.4, userSelect: 'none' }}>
                       <div>{clientName(s.client_id)}</div>
                       <div style={{ fontWeight: 400, opacity: 0.8 }}>{format(parseISO(s.starts_at), 'HH:mm')}</div>
+                    </div>
+                  ))}
+                  {slotEvents.map(e => (
+                    <div key={e.id}
+                      draggable
+                      onDragStart={ev => { ev.stopPropagation(); dragEvent.current = e }}
+                      onClick={ev => { ev.stopPropagation(); setSelectedEvent(e); setSelectedSession(null); setShowForm(false); setShowBlockForm(false) }}
+                      style={{ background: BLOCK_COLOR, borderRadius: 4, padding: '2px 5px', marginBottom: 2, fontSize: 10, fontWeight: 600, color: '#f0f0f0', cursor: 'grab', lineHeight: 1.4, userSelect: 'none' }}>
+                      <div>{e.title}</div>
+                      <div style={{ fontWeight: 400, opacity: 0.7 }}>{format(parseISO(e.starts_at), 'HH:mm')}</div>
                     </div>
                   ))}
                 </div>
@@ -224,18 +277,24 @@ export default function CoachCalendar({ clients }) {
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)' }}>
           {days.map(d => {
             const daySessions = sessions.filter(s => isSameDay(parseISO(s.starts_at), d) && s.status !== 'cancelled')
+            const dayEvents = coachEvents.filter(e => isSameDay(parseISO(e.starts_at), d))
             const isCurrentMonth = d.getMonth() === current.getMonth()
+            const allItems = [
+              ...daySessions.map(s => ({ ...s, _type: 'session' })),
+              ...dayEvents.map(e => ({ ...e, _type: 'event' }))
+            ].sort((a, b) => new Date(a.starts_at) - new Date(b.starts_at))
             return (
               <div key={d.toISOString()} onClick={() => handleDayClick(d)}
                 style={{ minHeight: 80, border: '0.5px solid var(--border)', padding: '6px', cursor: 'pointer', background: isToday(d) ? 'var(--gold-bg)' : 'transparent', opacity: isCurrentMonth ? 1 : 0.3 }}>
                 <div style={{ fontSize: 12, fontWeight: 500, marginBottom: 4, color: isToday(d) ? 'var(--gold)' : 'var(--text)' }}>{format(d, 'd')}</div>
-                {daySessions.slice(0, 3).map(s => (
-                  <div key={s.id} onClick={e => { e.stopPropagation(); setSelectedSession(s); setShowForm(false) }}
-                    style={{ background: clientColor(s.client_id), borderRadius: 3, padding: '1px 4px', marginBottom: 2, fontSize: 9, fontWeight: 600, color: '#1a1a1a', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                    {format(parseISO(s.starts_at), 'HH:mm')} {clientName(s.client_id)}
+                {allItems.slice(0, 3).map(item => (
+                  <div key={item.id}
+                    onClick={e => { e.stopPropagation(); item._type === 'session' ? (setSelectedSession(item), setSelectedEvent(null)) : (setSelectedEvent(item), setSelectedSession(null)); setShowForm(false); setShowBlockForm(false) }}
+                    style={{ background: item._type === 'session' ? clientColor(item.client_id) : BLOCK_COLOR, borderRadius: 3, padding: '1px 4px', marginBottom: 2, fontSize: 9, fontWeight: 600, color: item._type === 'session' ? '#1a1a1a' : '#f0f0f0', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                    {format(parseISO(item.starts_at), 'HH:mm')} {item._type === 'session' ? clientName(item.client_id) : item.title}
                   </div>
                 ))}
-                {daySessions.length > 3 && <div style={{ fontSize: 9, color: 'var(--text3)' }}>+{daySessions.length - 3} more</div>}
+                {allItems.length > 3 && <div style={{ fontSize: 9, color: 'var(--text3)' }}>+{allItems.length - 3} more</div>}
               </div>
             )
           })}
@@ -255,7 +314,7 @@ export default function CoachCalendar({ clients }) {
               : format(current, 'MMMM yyyy')}
           </div>
         </div>
-        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
           <div style={{ display: 'flex', background: 'var(--surface2)', borderRadius: 8, padding: 2 }}>
             {['week','month'].map(v => (
               <button key={v} onClick={() => setView(v)} style={{ padding: '5px 12px', borderRadius: 6, fontSize: 11, fontWeight: 600, letterSpacing: '0.06em', cursor: 'pointer', border: 'none', background: view === v ? 'var(--surface)' : 'transparent', color: view === v ? 'var(--text)' : 'var(--text3)', fontFamily: 'Montserrat, sans-serif' }}>{v.toUpperCase()}</button>
@@ -267,23 +326,29 @@ export default function CoachCalendar({ clients }) {
             style={{ background: 'var(--surface2)', border: 'none', color: 'var(--text)', cursor: 'pointer', borderRadius: 6, padding: '6px 10px', fontSize: 11, fontWeight: 600, fontFamily: 'Montserrat, sans-serif' }}>TODAY</button>
           <button onClick={() => view === 'week' ? setCurrent(addWeeks(current, 1)) : setCurrent(addMonths(current, 1))}
             style={{ background: 'var(--surface2)', border: 'none', color: 'var(--text)', cursor: 'pointer', borderRadius: 6, padding: '6px 10px', fontSize: 14 }}>›</button>
-          <button onClick={() => { setShowForm(true); setFormDate(format(new Date(), 'yyyy-MM-dd')); setFormClient(clients[0]?.id || ''); setSelectedSession(null) }}
-            style={{ background: 'var(--gold)', border: 'none', color: '#1a1a1a', cursor: 'pointer', borderRadius: 6, padding: '6px 14px', fontSize: 11, fontWeight: 600, fontFamily: 'Montserrat, sans-serif' }}>+ SESSION</button>
+          <button onClick={() => { setShowBlockForm(true); setShowForm(false); setSelectedSession(null); setSelectedEvent(null); setBlockForm(f => ({ ...f, date: format(new Date(), 'yyyy-MM-dd') })) }}
+            style={{ background: 'var(--surface2)', border: '0.5px solid var(--border2)', color: 'var(--text)', cursor: 'pointer', borderRadius: 6, padding: '6px 14px', fontSize: 11, fontWeight: 600, fontFamily: 'Montserrat, sans-serif' }}>+ Block time</button>
+          <button onClick={() => { setShowForm(true); setShowBlockForm(false); setFormDate(format(new Date(), 'yyyy-MM-dd')); setFormClient(clients[0]?.id || ''); setSelectedSession(null); setSelectedEvent(null) }}
+            style={{ background: 'var(--gold)', border: 'none', color: '#1a1a1a', cursor: 'pointer', borderRadius: 6, padding: '6px 14px', fontSize: 11, fontWeight: 600, fontFamily: 'Montserrat, sans-serif' }}>+ Session</button>
         </div>
       </div>
 
-      <div style={{ display: 'flex', gap: 12, marginBottom: 14, flexWrap: 'wrap', flexShrink: 0 }}>
+      <div style={{ display: 'flex', gap: 12, marginBottom: 8, flexWrap: 'wrap', flexShrink: 0, alignItems: 'center' }}>
         {clients.map((c, i) => (
           <div key={c.id} style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
             <div style={{ width: 8, height: 8, borderRadius: '50%', background: CLIENT_COLORS[i % CLIENT_COLORS.length] }} />
             <span style={{ fontSize: 11, color: 'var(--text3)' }}>{c.full_name}</span>
           </div>
         ))}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+          <div style={{ width: 8, height: 8, borderRadius: '50%', background: BLOCK_COLOR }} />
+          <span style={{ fontSize: 11, color: 'var(--text3)' }}>Blocked time</span>
+        </div>
       </div>
 
       {view === 'week' && (
         <div style={{ fontSize: 10, color: 'var(--text3)', letterSpacing: '0.06em', marginBottom: 8, flexShrink: 0 }}>
-          <i className="ti ti-arrows-move" style={{ fontSize: 11 }} /> Drag sessions to reschedule
+          <i className="ti ti-arrows-move" style={{ fontSize: 11 }} /> Drag sessions or events to reschedule
         </div>
       )}
 
@@ -292,8 +357,9 @@ export default function CoachCalendar({ clients }) {
           {view === 'week' ? <WeekView /> : <MonthView />}
         </div>
 
-        {(showForm || selectedSession) && (
+        {(showForm || showBlockForm || selectedSession || selectedEvent) && (
           <div style={{ width: 260, background: 'var(--surface)', borderRadius: 12, border: '0.5px solid var(--border2)', padding: 18, flexShrink: 0, overflowY: 'auto' }}>
+
             {showForm && (
               <>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
@@ -333,6 +399,46 @@ export default function CoachCalendar({ clients }) {
                 </button>
               </>
             )}
+
+            {showBlockForm && (
+              <>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+                  <h3>Block time</h3>
+                  <button onClick={() => setShowBlockForm(false)} style={{ background: 'none', border: 'none', color: 'var(--text3)', cursor: 'pointer', fontSize: 16 }}>×</button>
+                </div>
+                <div style={{ marginBottom: 10 }}>
+                  <label className="input-label">Title</label>
+                  <input className="input" placeholder="e.g. Admin, Own training" value={blockForm.title}
+                    onChange={e => setBlockForm(f => ({ ...f, title: e.target.value }))} style={{ fontSize: 12 }} />
+                </div>
+                <div style={{ marginBottom: 10 }}>
+                  <label className="input-label">Notes (optional)</label>
+                  <input className="input" placeholder="Any details..." value={blockForm.notes}
+                    onChange={e => setBlockForm(f => ({ ...f, notes: e.target.value }))} style={{ fontSize: 12 }} />
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 10 }}>
+                  <div>
+                    <label className="input-label">Date</label>
+                    <input className="input" type="date" value={blockForm.date}
+                      onChange={e => setBlockForm(f => ({ ...f, date: e.target.value }))} style={{ fontSize: 12 }} />
+                  </div>
+                  <div>
+                    <label className="input-label">Time</label>
+                    <input className="input" type="time" value={blockForm.time}
+                      onChange={e => setBlockForm(f => ({ ...f, time: e.target.value }))} style={{ fontSize: 12 }} />
+                  </div>
+                </div>
+                <div style={{ marginBottom: 14 }}>
+                  <label className="input-label">Duration (min)</label>
+                  <input className="input" type="number" value={blockForm.duration}
+                    onChange={e => setBlockForm(f => ({ ...f, duration: e.target.value }))} style={{ fontSize: 12 }} />
+                </div>
+                <button className="btn btn-primary btn-sm" onClick={saveBlockEvent} disabled={saving}>
+                  {saving ? 'Saving…' : 'Add to calendar'}
+                </button>
+              </>
+            )}
+
             {selectedSession && (
               <>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
@@ -364,8 +470,36 @@ export default function CoachCalendar({ clients }) {
                   </span>
                 </div>
                 {selectedSession.status === 'scheduled' && (
-                  <button className="btn btn-danger btn-sm" onClick={() => deleteSession(selectedSession.id)}>Cancel session</button>
+                  <button className="btn btn-danger btn-sm" onClick={() => cancelSession(selectedSession.id)}>Cancel session</button>
                 )}
+              </>
+            )}
+
+            {selectedEvent && (
+              <>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+                  <h3>Blocked time</h3>
+                  <button onClick={() => setSelectedEvent(null)} style={{ background: 'none', border: 'none', color: 'var(--text3)', cursor: 'pointer', fontSize: 16 }}>×</button>
+                </div>
+                <div style={{ marginBottom: 10 }}>
+                  <div className="section-label mb-8">Title</div>
+                  <div style={{ fontSize: 13, color: 'var(--text)' }}>{selectedEvent.title}</div>
+                </div>
+                <div style={{ marginBottom: 10 }}>
+                  <div className="section-label mb-8">Date & time</div>
+                  <div style={{ fontSize: 13, color: 'var(--text)' }}>{format(parseISO(selectedEvent.starts_at), 'EEE d MMM yyyy, HH:mm')}</div>
+                </div>
+                <div style={{ marginBottom: 10 }}>
+                  <div className="section-label mb-8">Duration</div>
+                  <div style={{ fontSize: 13, color: 'var(--text)' }}>{selectedEvent.duration_min} min</div>
+                </div>
+                {selectedEvent.notes && (
+                  <div style={{ marginBottom: 16 }}>
+                    <div className="section-label mb-8">Notes</div>
+                    <div style={{ fontSize: 13, color: 'var(--text)' }}>{selectedEvent.notes}</div>
+                  </div>
+                )}
+                <button className="btn btn-danger btn-sm" onClick={() => deleteBlockEvent(selectedEvent.id)}>Delete event</button>
               </>
             )}
           </div>
