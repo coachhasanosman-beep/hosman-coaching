@@ -1,7 +1,7 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useRef } from 'react'
 import { format, startOfWeek, endOfWeek, startOfMonth, endOfMonth,
   eachDayOfInterval, isSameDay, addWeeks, subWeeks, addMonths, subMonths,
-  isToday, parseISO, getHours } from 'date-fns'
+  isToday, parseISO, getHours, getMinutes } from 'date-fns'
 import toast from 'react-hot-toast'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../hooks/useAuth'
@@ -25,6 +25,7 @@ export default function CoachCalendar({ clients }) {
   const [formDuration, setFormDuration] = useState(60)
   const [saving, setSaving]       = useState(false)
   const [selectedSession, setSelectedSession] = useState(null)
+  const dragSession = useRef(null)
 
   useEffect(() => { loadSessions() }, [current, view])
 
@@ -81,7 +82,7 @@ export default function CoachCalendar({ clients }) {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${authSession.access_token}`
         },
-        body: JSON.stringify({ session, clientEmail, clientName, cancelled })
+        body: JSON.stringify({ session, clientEmail: clientEmail, clientName: clientName, cancelled })
       })
     } catch (e) {
       console.error('Calendar invite failed:', e)
@@ -92,7 +93,7 @@ export default function CoachCalendar({ clients }) {
     if (!formClient || !formDate) return toast.error('Select a client and date')
     setSaving(true)
     try {
-      const starts_at = new Date(`${formDate}T${formTime}:00`).toISOString()
+      const starts_at = new Date(`${formDate}T${formTime}`).toISOString()
       const { data } = await supabase.from('scheduled_sessions').insert({
         client_id: formClient,
         title: formTitle,
@@ -119,6 +120,24 @@ export default function CoachCalendar({ clients }) {
     }
   }
 
+  async function rescheduleSession(session, newDate, newHour) {
+    const old = parseISO(session.starts_at)
+    const newStarts = new Date(newDate)
+    newStarts.setHours(newHour, getMinutes(old), 0, 0)
+    const starts_at = newStarts.toISOString()
+
+    await supabase.from('scheduled_sessions').update({ starts_at }).eq('id', session.id)
+
+    const updatedSession = { ...session, starts_at }
+    const client = clients.find(c => c.id === session.client_id)
+    if (client) {
+      await sendCalendarInvite(updatedSession, client.email, client.full_name, false)
+    }
+
+    toast.success('Session rescheduled — client notified')
+    loadSessions()
+  }
+
   async function deleteSession(id) {
     if (!window.confirm('Cancel this session?')) return
     const sess = sessions.find(s => s.id === id)
@@ -137,6 +156,7 @@ export default function CoachCalendar({ clients }) {
   function WeekView() {
     const weekStart = startOfWeek(current, { weekStartsOn: 1 })
     const allDays = eachDayOfInterval({ start: weekStart, end: endOfWeek(current, { weekStartsOn: 1 }) })
+
     return (
       <div style={{ flex: 1, overflow: 'auto' }}>
         <div style={{ display: 'grid', gridTemplateColumns: '48px repeat(7, 1fr)', borderBottom: '0.5px solid var(--border2)', position: 'sticky', top: 0, background: 'var(--surface)', zIndex: 2 }}>
@@ -157,11 +177,26 @@ export default function CoachCalendar({ clients }) {
                 return isSameDay(sd, d) && getHours(sd) === hour && s.status !== 'cancelled'
               })
               return (
-                <div key={d.toISOString()} onClick={() => handleSlotClick(d, hour)}
+                <div key={d.toISOString()}
+                  onClick={() => handleSlotClick(d, hour)}
+                  onDragOver={e => e.preventDefault()}
+                  onDrop={e => {
+                    e.preventDefault()
+                    if (dragSession.current) {
+                      rescheduleSession(dragSession.current, d, hour)
+                      dragSession.current = null
+                    }
+                  }}
                   style={{ borderLeft: '0.5px solid var(--border)', padding: '2px 3px', cursor: 'pointer', minHeight: 56 }}>
                   {slotSessions.map(s => (
-                    <div key={s.id} onClick={e => { e.stopPropagation(); setSelectedSession(s); setShowForm(false) }}
-                      style={{ background: clientColor(s.client_id), borderRadius: 4, padding: '2px 5px', marginBottom: 2, fontSize: 10, fontWeight: 600, color: '#1a1a1a', cursor: 'pointer', lineHeight: 1.4 }}>
+                    <div key={s.id}
+                      draggable
+                      onDragStart={e => {
+                        e.stopPropagation()
+                        dragSession.current = s
+                      }}
+                      onClick={e => { e.stopPropagation(); setSelectedSession(s); setShowForm(false) }}
+                      style={{ background: clientColor(s.client_id), borderRadius: 4, padding: '2px 5px', marginBottom: 2, fontSize: 10, fontWeight: 600, color: '#1a1a1a', cursor: 'grab', lineHeight: 1.4, userSelect: 'none' }}>
                       <div>{clientName(s.client_id)}</div>
                       <div style={{ fontWeight: 400, opacity: 0.8 }}>{format(parseISO(s.starts_at), 'HH:mm')}</div>
                     </div>
@@ -245,6 +280,12 @@ export default function CoachCalendar({ clients }) {
           </div>
         ))}
       </div>
+
+      {view === 'week' && (
+        <div style={{ fontSize: 10, color: 'var(--text3)', letterSpacing: '0.06em', marginBottom: 8, flexShrink: 0 }}>
+          <i className="ti ti-arrows-move" style={{ fontSize: 11 }} /> Drag sessions to reschedule
+        </div>
+      )}
 
       <div style={{ flex: 1, overflow: 'hidden', display: 'flex', gap: 20 }}>
         <div style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column', background: 'var(--surface)', borderRadius: 12, border: '0.5px solid var(--border2)' }}>
