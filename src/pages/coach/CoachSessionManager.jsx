@@ -37,7 +37,7 @@ async function sendThresholdEmail(supabaseUrl, authToken, clientEmail, clientNam
 
 export default function CoachSessionManager({ clientId, client }) {
   const { profile } = useAuth()
-  const [pkg, setPkg]     = useState(null)
+  const [pkg, setPkg]       = useState(null)
   const [sessions, setSessions] = useState([])
   const [showForm, setShowForm] = useState(false)
   const [showPkg, setShowPkg]   = useState(false)
@@ -54,6 +54,13 @@ export default function CoachSessionManager({ clientId, client }) {
     ])
     setPkg(pkgRes.data?.[0] || null)
     setSessions(sessRes.data || [])
+  }
+
+  async function adjustSessions(delta) {
+    if (!pkg) return
+    const newUsed = pkg.sessions_used + delta
+    await supabase.from('packages').update({ sessions_used: newUsed }).eq('id', pkg.id)
+    load()
   }
 
   async function addSession() {
@@ -73,7 +80,6 @@ export default function CoachSessionManager({ clientId, client }) {
       }).select().single()
 
       await sendCalendarInvite(data, client.email, client.full_name, false)
-
       toast.success('Session scheduled — calendar invite sent')
       setShowForm(false)
       setForm({ title: 'Session with Hasan', location: '', date: '', time: '10:00', duration: 60 })
@@ -112,7 +118,7 @@ export default function CoachSessionManager({ clientId, client }) {
   async function undoComplete(id) {
     await supabase.from('scheduled_sessions').update({ status: 'scheduled' }).eq('id', id)
     if (pkg) {
-      const newUsed = Math.max(0, pkg.sessions_used - 1)
+      const newUsed = pkg.sessions_used - 1
       await supabase.from('packages').update({ sessions_used: newUsed }).eq('id', pkg.id)
     }
     toast.success('Session restored')
@@ -155,13 +161,13 @@ export default function CoachSessionManager({ clientId, client }) {
   const pct = total > 0 ? Math.max(0, remaining) / total : 0
   const circumference = 2 * Math.PI * 66
   const dash = circumference * pct
-  const ringColor = !pkg || remaining <= 0 ? 'var(--red)' : remaining <= 3 ? 'var(--gold)' : 'var(--gold)'
+  const ringColor = !pkg || remaining <= 0 ? 'var(--red)' : 'var(--gold)'
 
   return (
     <div style={{ flex: 1, overflowY: 'auto' }}>
 
-      {/* Session ring — always visible */}
-      <div style={{ display: 'flex', justifyContent: 'center', padding: '16px 0 8px' }}>
+      {/* Session ring */}
+      <div style={{ display: 'flex', justifyContent: 'center', padding: '16px 0 4px' }}>
         <svg width="160" height="160" viewBox="0 0 160 160">
           <circle cx="80" cy="80" r="66" fill="none" stroke="var(--surface2)" strokeWidth="12"/>
           {pkg && (
@@ -183,6 +189,25 @@ export default function CoachSessionManager({ clientId, client }) {
         </svg>
       </div>
 
+      {/* Manual adjust buttons */}
+      {pkg && (
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 12, marginBottom: 8 }}>
+          <button
+            onClick={() => adjustSessions(1)}
+            title="Deduct a session"
+            style={{ background: 'var(--surface2)', border: '0.5px solid var(--border2)', color: 'var(--text)', cursor: 'pointer', borderRadius: 6, width: 32, height: 32, fontSize: 18, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            −
+          </button>
+          <span style={{ fontSize: 11, color: 'var(--text3)' }}>{pkg.sessions_used} used · {pkg.sessions_total} total</span>
+          <button
+            onClick={() => adjustSessions(-1)}
+            title="Add back a session"
+            style={{ background: 'var(--surface2)', border: '0.5px solid var(--border2)', color: 'var(--text)', cursor: 'pointer', borderRadius: 6, width: 32, height: 32, fontSize: 18, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            +
+          </button>
+        </div>
+      )}
+
       {/* Package actions */}
       <div style={{ marginBottom: 28 }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
@@ -191,12 +216,6 @@ export default function CoachSessionManager({ clientId, client }) {
             {showPkg ? 'Cancel' : pkg ? 'Add sessions' : 'Add package'}
           </button>
         </div>
-
-        {pkg && !showPkg && (
-          <div style={{ fontSize: 12, color: 'var(--text3)', textAlign: 'center', marginBottom: 8 }}>
-            {pkg.sessions_used} used · {pkg.sessions_total} total
-          </div>
-        )}
 
         {showPkg && (
           <div className="card">
