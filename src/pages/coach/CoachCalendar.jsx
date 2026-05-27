@@ -525,8 +525,35 @@ export default function CoachCalendar({ clients }) {
                   </span>
                 </div>
                 {selectedSession.status === 'scheduled' && (
-                  <button className="btn btn-danger btn-sm" onClick={() => cancelSession(selectedSession.id)}>Cancel session</button>
-                )}
+  <>
+    <div style={{ marginBottom: 10 }}>
+      <label className="input-label">Reschedule date</label>
+      <input className="input" type="date"
+        defaultValue={format(parseISO(selectedSession.starts_at), 'yyyy-MM-dd')}
+        id="reschedule-date" style={{ fontSize: 12, marginBottom: 6 }} />
+      <input className="input" type="time" step="900"
+        defaultValue={format(parseISO(selectedSession.starts_at), 'HH:mm')}
+        id="reschedule-time" style={{ fontSize: 12 }} />
+    </div>
+    <button className="btn btn-gold btn-sm" style={{ marginBottom: 8 }}
+      onClick={async () => {
+        const date = document.getElementById('reschedule-date').value
+        const time = document.getElementById('reschedule-time').value
+        if (!date || !time) return toast.error('Set a date and time')
+        const newStarts = new Date(`${date}T${time}`)
+        const starts_at = newStarts.toISOString()
+        await supabase.from('scheduled_sessions').update({ starts_at }).eq('id', selectedSession.id)
+        const client = clients.find(c => c.id === selectedSession.client_id)
+        if (client) await sendCalendarInvite({ ...selectedSession, starts_at }, client.email, client.full_name, false)
+        toast.success('Session rescheduled — client notified')
+        setSelectedSession(null)
+        loadAll()
+      }}>
+      Reschedule
+    </button>
+    <button className="btn btn-danger btn-sm" onClick={() => cancelSession(selectedSession.id)}>Cancel session</button>
+  </>
+)}
               </>
             )}
 
