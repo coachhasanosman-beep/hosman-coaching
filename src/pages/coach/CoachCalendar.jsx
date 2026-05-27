@@ -71,9 +71,13 @@ export default function CoachCalendar({ clients }) {
     return c?.full_name || 'Unknown'
   }
 
-  function handleSlotClick(date, hour) {
+  function handleSlotClick(date, hour, e) {
+    const rect = e.currentTarget.getBoundingClientRect()
+    const y = e.clientY - rect.top
+    const pct = y / rect.height
+    const minutes = pct < 0.25 ? 0 : pct < 0.5 ? 15 : pct < 0.75 ? 30 : 45
     setFormDate(format(date, 'yyyy-MM-dd'))
-    setFormTime(`${String(hour).padStart(2, '0')}:00`)
+    setFormTime(`${String(hour).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`)
     setFormClient(clients[0]?.id || '')
     setShowForm(true)
     setShowBlockForm(false)
@@ -158,10 +162,9 @@ export default function CoachCalendar({ clients }) {
     loadAll()
   }
 
-  async function rescheduleSession(session, newDate, newHour) {
-    const old = parseISO(session.starts_at)
+  async function rescheduleSession(session, newDate, newHour, newMinutes = 0) {
     const newStarts = new Date(newDate)
-    newStarts.setHours(newHour, getMinutes(old), 0, 0)
+    newStarts.setHours(newHour, newMinutes, 0, 0)
     const starts_at = newStarts.toISOString()
     await supabase.from('scheduled_sessions').update({ starts_at }).eq('id', session.id)
     const client = clients.find(c => c.id === session.client_id)
@@ -170,10 +173,9 @@ export default function CoachCalendar({ clients }) {
     loadAll()
   }
 
-  async function rescheduleEvent(event, newDate, newHour) {
-    const old = parseISO(event.starts_at)
+  async function rescheduleEvent(event, newDate, newHour, newMinutes = 0) {
     const newStarts = new Date(newDate)
-    newStarts.setHours(newHour, getMinutes(old), 0, 0)
+    newStarts.setHours(newHour, newMinutes, 0, 0)
     await supabase.from('coach_events').update({ starts_at: newStarts.toISOString() }).eq('id', event.id)
     toast.success('Event rescheduled')
     loadAll()
@@ -208,7 +210,7 @@ export default function CoachCalendar({ clients }) {
           ))}
         </div>
         {HOURS.map(hour => (
-          <div key={hour} style={{ display: 'grid', gridTemplateColumns: '48px repeat(7, 1fr)', minHeight: 56, borderBottom: '0.5px solid var(--border)' }}>
+          <div key={hour} style={{ display: 'grid', gridTemplateColumns: '48px repeat(7, 1fr)', minHeight: 64, borderBottom: '0.5px solid var(--border)' }}>
             <div style={{ fontSize: 10, color: 'var(--text3)', padding: '4px 6px 0', textAlign: 'right' }}>{hour}:00</div>
             {allDays.map(d => {
               const slotSessions = sessions.filter(s => {
@@ -221,25 +223,33 @@ export default function CoachCalendar({ clients }) {
               })
               return (
                 <div key={d.toISOString()}
-                  onClick={() => handleSlotClick(d, hour)}
+                  onClick={e => handleSlotClick(d, hour, e)}
                   onDragOver={e => e.preventDefault()}
                   onDrop={e => {
                     e.preventDefault()
+                    const rect = e.currentTarget.getBoundingClientRect()
+                    const y = e.clientY - rect.top
+                    const pct = y / rect.height
+                    const minutes = pct < 0.25 ? 0 : pct < 0.5 ? 15 : pct < 0.75 ? 30 : 45
                     if (dragSession.current) {
-                      rescheduleSession(dragSession.current, d, hour)
+                      rescheduleSession(dragSession.current, d, hour, minutes)
                       dragSession.current = null
                     } else if (dragEvent.current) {
-                      rescheduleEvent(dragEvent.current, d, hour)
+                      rescheduleEvent(dragEvent.current, d, hour, minutes)
                       dragEvent.current = null
                     }
                   }}
-                  style={{ borderLeft: '0.5px solid var(--border)', padding: '2px 3px', cursor: 'pointer', minHeight: 56 }}>
+                  style={{ borderLeft: '0.5px solid var(--border)', padding: '2px 3px', cursor: 'pointer', minHeight: 64, position: 'relative' }}>
+                  {/* 15-min guide lines */}
+                  {[1,2,3].map(q => (
+                    <div key={q} style={{ position: 'absolute', left: 0, right: 0, top: `${q * 25}%`, borderTop: '0.5px dashed rgba(255,255,255,0.04)', pointerEvents: 'none' }} />
+                  ))}
                   {slotSessions.map(s => (
                     <div key={s.id}
                       draggable
                       onDragStart={e => { e.stopPropagation(); dragSession.current = s }}
                       onClick={e => { e.stopPropagation(); setSelectedSession(s); setSelectedEvent(null); setShowForm(false); setShowBlockForm(false) }}
-                      style={{ background: clientColor(s.client_id), borderRadius: 4, padding: '2px 5px', marginBottom: 2, fontSize: 10, fontWeight: 600, color: '#1a1a1a', cursor: 'grab', lineHeight: 1.4, userSelect: 'none' }}>
+                      style={{ background: clientColor(s.client_id), borderRadius: 4, padding: '2px 5px', marginBottom: 2, fontSize: 10, fontWeight: 600, color: '#1a1a1a', cursor: 'grab', lineHeight: 1.4, userSelect: 'none', position: 'relative', zIndex: 1 }}>
                       <div>{clientName(s.client_id)}</div>
                       <div style={{ fontWeight: 400, opacity: 0.8 }}>{format(parseISO(s.starts_at), 'HH:mm')}</div>
                     </div>
@@ -249,7 +259,7 @@ export default function CoachCalendar({ clients }) {
                       draggable
                       onDragStart={ev => { ev.stopPropagation(); dragEvent.current = e }}
                       onClick={ev => { ev.stopPropagation(); setSelectedEvent(e); setSelectedSession(null); setShowForm(false); setShowBlockForm(false) }}
-                      style={{ background: BLOCK_COLOR, borderRadius: 4, padding: '2px 5px', marginBottom: 2, fontSize: 10, fontWeight: 600, color: '#f0f0f0', cursor: 'grab', lineHeight: 1.4, userSelect: 'none' }}>
+                      style={{ background: BLOCK_COLOR, borderRadius: 4, padding: '2px 5px', marginBottom: 2, fontSize: 10, fontWeight: 600, color: '#f0f0f0', cursor: 'grab', lineHeight: 1.4, userSelect: 'none', position: 'relative', zIndex: 1 }}>
                       <div>{e.title}</div>
                       <div style={{ fontWeight: 400, opacity: 0.7 }}>{format(parseISO(e.starts_at), 'HH:mm')}</div>
                     </div>
@@ -348,7 +358,7 @@ export default function CoachCalendar({ clients }) {
 
       {view === 'week' && (
         <div style={{ fontSize: 10, color: 'var(--text3)', letterSpacing: '0.06em', marginBottom: 8, flexShrink: 0 }}>
-          <i className="ti ti-arrows-move" style={{ fontSize: 11 }} /> Drag sessions or events to reschedule
+          <i className="ti ti-arrows-move" style={{ fontSize: 11 }} /> Drag to reschedule · Click position within hour to snap to 15-min slot
         </div>
       )}
 
@@ -387,7 +397,7 @@ export default function CoachCalendar({ clients }) {
                   </div>
                   <div>
                     <label className="input-label">Time</label>
-                    <input className="input" type="time" value={formTime} onChange={e => setFormTime(e.target.value)} style={{ fontSize: 12 }} />
+                    <input className="input" type="time" step="900" value={formTime} onChange={e => setFormTime(e.target.value)} style={{ fontSize: 12 }} />
                   </div>
                 </div>
                 <div style={{ marginBottom: 14 }}>
@@ -424,7 +434,7 @@ export default function CoachCalendar({ clients }) {
                   </div>
                   <div>
                     <label className="input-label">Time</label>
-                    <input className="input" type="time" value={blockForm.time}
+                    <input className="input" type="time" step="900" value={blockForm.time}
                       onChange={e => setBlockForm(f => ({ ...f, time: e.target.value }))} style={{ fontSize: 12 }} />
                   </div>
                 </div>
