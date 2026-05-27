@@ -57,9 +57,17 @@ export default function CoachSessionManager({ clientId, client }) {
   }
 
   async function adjustSessions(delta) {
-    if (!pkg) return
-    const newUsed = pkg.sessions_used + delta
-    await supabase.from('packages').update({ sessions_used: newUsed }).eq('id', pkg.id)
+    if (pkg) {
+      const newUsed = pkg.sessions_used + delta
+      await supabase.from('packages').update({ sessions_used: newUsed }).eq('id', pkg.id)
+    } else {
+      await supabase.from('packages').insert({
+        client_id: clientId,
+        sessions_total: 0,
+        sessions_used: delta > 0 ? delta : 0,
+        price_paid: null
+      })
+    }
     load()
   }
 
@@ -189,24 +197,24 @@ export default function CoachSessionManager({ clientId, client }) {
         </svg>
       </div>
 
-      {/* Manual adjust buttons */}
-      {pkg && (
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 12, marginBottom: 8 }}>
-          <button
-            onClick={() => adjustSessions(1)}
-            title="Deduct a session"
-            style={{ background: 'var(--surface2)', border: '0.5px solid var(--border2)', color: 'var(--text)', cursor: 'pointer', borderRadius: 6, width: 32, height: 32, fontSize: 18, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-            −
-          </button>
-          <span style={{ fontSize: 11, color: 'var(--text3)' }}>{pkg.sessions_used} used · {pkg.sessions_total} total</span>
-          <button
-            onClick={() => adjustSessions(-1)}
-            title="Add back a session"
-            style={{ background: 'var(--surface2)', border: '0.5px solid var(--border2)', color: 'var(--text)', cursor: 'pointer', borderRadius: 6, width: 32, height: 32, fontSize: 18, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-            +
-          </button>
-        </div>
-      )}
+      {/* Manual adjust buttons — always visible */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 12, marginBottom: 16 }}>
+        <button
+          onClick={() => adjustSessions(1)}
+          title="Deduct a session"
+          style={{ background: 'var(--surface2)', border: '0.5px solid var(--border2)', color: 'var(--text)', cursor: 'pointer', borderRadius: 6, width: 32, height: 32, fontSize: 18, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          −
+        </button>
+        <span style={{ fontSize: 11, color: 'var(--text3)' }}>
+          {pkg ? `${pkg.sessions_used} used · ${pkg.sessions_total} total` : 'no package'}
+        </span>
+        <button
+          onClick={() => adjustSessions(-1)}
+          title="Add back a session"
+          style={{ background: 'var(--surface2)', border: '0.5px solid var(--border2)', color: 'var(--text)', cursor: 'pointer', borderRadius: 6, width: 32, height: 32, fontSize: 18, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          +
+        </button>
+      </div>
 
       {/* Package actions */}
       <div style={{ marginBottom: 28 }}>
