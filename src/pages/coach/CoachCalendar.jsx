@@ -7,6 +7,7 @@ import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../hooks/useAuth'
 
 const HOURS = Array.from({ length: 15 }, (_, i) => i + 6)
+const ROW_HEIGHT = 64 // px per hour
 const CLIENT_COLORS = [
   '#c9a96e', '#4eca87', '#6eafc9', '#c96e9a', '#9a6ec9', '#c9b96e', '#6ec9b9'
 ]
@@ -44,7 +45,6 @@ export default function CoachCalendar({ clients }) {
       start = startOfMonth(current)
       end = endOfMonth(current)
     }
-
     const [sessRes, evtRes] = await Promise.all([
       supabase.from('scheduled_sessions')
         .select('*, profiles:client_id(full_name)')
@@ -71,11 +71,23 @@ export default function CoachCalendar({ clients }) {
     return c?.full_name || 'Unknown'
   }
 
-  function handleSlotClick(date, hour, e) {
+  // Convert time to pixels from top of grid
+  function timeToPx(date) {
+    const h = getHours(date) - 6
+    const m = getMinutes(date)
+    return h * ROW_HEIGHT + (m / 60) * ROW_HEIGHT
+  }
+
+  function durationToPx(minutes) {
+    return (minutes / 60) * ROW_HEIGHT
+  }
+
+  function handleGridClick(date, e) {
     const rect = e.currentTarget.getBoundingClientRect()
     const y = e.clientY - rect.top
-    const pct = y / rect.height
-    const minutes = pct < 0.25 ? 0 : pct < 0.5 ? 15 : pct < 0.75 ? 30 : 45
+    const totalMinutes = Math.round((y / ROW_HEIGHT) * 60 / 15) * 15
+    const hour = Math.floor(totalMinutes / 60) + 6
+    const minutes = totalMinutes % 60
     setFormDate(format(date, 'yyyy-MM-dd'))
     setFormTime(`${String(hour).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`)
     setFormClient(clients[0]?.id || '')
@@ -117,10 +129,8 @@ export default function CoachCalendar({ clients }) {
         client_id: formClient, title: formTitle, location: formLocation,
         starts_at, duration_min: formDuration, type: 'coached', status: 'scheduled', created_by: profile.id
       }).select().single()
-
       const client = clients.find(c => c.id === formClient)
       if (client) await sendCalendarInvite(data, client.email, client.full_name, false)
-
       toast.success('Session scheduled — calendar invite sent')
       setShowForm(false)
       loadAll()
@@ -137,11 +147,8 @@ export default function CoachCalendar({ clients }) {
     try {
       const starts_at = new Date(`${blockForm.date}T${blockForm.time}`).toISOString()
       await supabase.from('coach_events').insert({
-        coach_id: profile.id,
-        title: blockForm.title,
-        notes: blockForm.notes,
-        starts_at,
-        duration_min: parseInt(blockForm.duration)
+        coach_id: profile.id, title: blockForm.title, notes: blockForm.notes,
+        starts_at, duration_min: parseInt(blockForm.duration)
       })
       toast.success('Event added')
       setShowBlockForm(false)
@@ -162,9 +169,12 @@ export default function CoachCalendar({ clients }) {
     loadAll()
   }
 
-  async function rescheduleSession(session, newDate, newHour, newMinutes = 0) {
+  async function rescheduleSession(session, newDate, yPx) {
+    const totalMinutes = Math.round((yPx / ROW_HEIGHT) * 60 / 15) * 15
+    const hour = Math.floor(totalMinutes / 60) + 6
+    const minutes = totalMinutes % 60
     const newStarts = new Date(newDate)
-    newStarts.setHours(newHour, newMinutes, 0, 0)
+    newStarts.setHours(hour, minutes, 0, 0)
     const starts_at = newStarts.toISOString()
     await supabase.from('scheduled_sessions').update({ starts_at }).eq('id', session.id)
     const client = clients.find(c => c.id === session.client_id)
@@ -173,9 +183,12 @@ export default function CoachCalendar({ clients }) {
     loadAll()
   }
 
-  async function rescheduleEvent(event, newDate, newHour, newMinutes = 0) {
+  async function rescheduleEvent(event, newDate, yPx) {
+    const totalMinutes = Math.round((yPx / ROW_HEIGHT) * 60 / 15) * 15
+    const hour = Math.floor(totalMinutes / 60) + 6
+    const minutes = totalMinutes % 60
     const newStarts = new Date(newDate)
-    newStarts.setHours(newHour, newMinutes, 0, 0)
+    newStarts.setHours(hour, minutes, 0, 0)
     await supabase.from('coach_events').update({ starts_at: newStarts.toISOString() }).eq('id', event.id)
     toast.success('Event rescheduled')
     loadAll()
@@ -197,10 +210,12 @@ export default function CoachCalendar({ clients }) {
   function WeekView() {
     const weekStart = startOfWeek(current, { weekStartsOn: 1 })
     const allDays = eachDayOfInterval({ start: weekStart, end: endOfWeek(current, { weekStartsOn: 1 }) })
+    const totalHeight = HOURS.length * ROW_HEIGHT
 
     return (
       <div style={{ flex: 1, overflow: 'auto' }}>
-        <div style={{ display: 'grid', gridTemplateColumns: '48px repeat(7, 1fr)', borderBottom: '0.5px solid var(--border2)', position: 'sticky', top: 0, background: 'var(--surface)', zIndex: 2 }}>
+        {/* Day headers */}
+        <div style={{ display: 'grid', gridTemplateColumns: '48px repeat(7, 1fr)', borderBottom: '0.5px solid var(--border2)', position: 'sticky', top: 0, background: 'var(--surface)', zIndex: 3 }}>
           <div />
           {allDays.map(d => (
             <div key={d.toISOString()} style={{ padding: '8px 4px', textAlign: 'center', borderLeft: '0.5px solid var(--border)' }}>
@@ -209,66 +224,97 @@ export default function CoachCalendar({ clients }) {
             </div>
           ))}
         </div>
-        {HOURS.map(hour => (
-          <div key={hour} style={{ display: 'grid', gridTemplateColumns: '48px repeat(7, 1fr)', minHeight: 64, borderBottom: '0.5px solid var(--border)' }}>
-            <div style={{ fontSize: 10, color: 'var(--text3)', padding: '4px 6px 0', textAlign: 'right' }}>{hour}:00</div>
-            {allDays.map(d => {
-              const slotSessions = sessions.filter(s => {
-                const sd = parseISO(s.starts_at)
-                return isSameDay(sd, d) && getHours(sd) === hour && s.status !== 'cancelled'
-              })
-              const slotEvents = coachEvents.filter(e => {
-                const ed = parseISO(e.starts_at)
-                return isSameDay(ed, d) && getHours(ed) === hour
-              })
-              return (
-                <div key={d.toISOString()}
-                  onClick={e => handleSlotClick(d, hour, e)}
-                  onDragOver={e => e.preventDefault()}
-                  onDrop={e => {
-                    e.preventDefault()
-                    const rect = e.currentTarget.getBoundingClientRect()
-                    const y = e.clientY - rect.top
-                    const pct = y / rect.height
-                    const minutes = pct < 0.25 ? 0 : pct < 0.5 ? 15 : pct < 0.75 ? 30 : 45
-                    if (dragSession.current) {
-                      rescheduleSession(dragSession.current, d, hour, minutes)
-                      dragSession.current = null
-                    } else if (dragEvent.current) {
-                      rescheduleEvent(dragEvent.current, d, hour, minutes)
-                      dragEvent.current = null
-                    }
-                  }}
-                  style={{ borderLeft: '0.5px solid var(--border)', padding: '2px 3px', cursor: 'pointer', minHeight: 64, position: 'relative' }}>
-                  {/* 15-min guide lines */}
-                  {[1,2,3].map(q => (
-                    <div key={q} style={{ position: 'absolute', left: 0, right: 0, top: `${q * 25}%`, borderTop: '0.5px dashed rgba(255,255,255,0.04)', pointerEvents: 'none' }} />
-                  ))}
-                  {slotSessions.map(s => (
+
+        {/* Time grid */}
+        <div style={{ display: 'grid', gridTemplateColumns: '48px repeat(7, 1fr)', position: 'relative' }}>
+          {/* Hour labels */}
+          <div style={{ position: 'relative', height: totalHeight }}>
+            {HOURS.map((hour, i) => (
+              <div key={hour} style={{ position: 'absolute', top: i * ROW_HEIGHT, right: 6, fontSize: 10, color: 'var(--text3)', lineHeight: 1 }}>
+                {hour}:00
+              </div>
+            ))}
+          </div>
+
+          {/* Day columns */}
+          {allDays.map(d => {
+            const daySessions = sessions.filter(s => isSameDay(parseISO(s.starts_at), d) && s.status !== 'cancelled')
+            const dayEvents = coachEvents.filter(e => isSameDay(parseISO(e.starts_at), d))
+
+            return (
+              <div key={d.toISOString()}
+                style={{ position: 'relative', height: totalHeight, borderLeft: '0.5px solid var(--border)', cursor: 'pointer' }}
+                onClick={e => handleGridClick(d, e)}
+                onDragOver={e => e.preventDefault()}
+                onDrop={e => {
+                  e.preventDefault()
+                  const rect = e.currentTarget.getBoundingClientRect()
+                  const y = e.clientY - rect.top
+                  if (dragSession.current) { rescheduleSession(dragSession.current, d, y); dragSession.current = null }
+                  else if (dragEvent.current) { rescheduleEvent(dragEvent.current, d, y); dragEvent.current = null }
+                }}>
+
+                {/* Hour lines */}
+                {HOURS.map((_, i) => (
+                  <div key={i} style={{ position: 'absolute', top: i * ROW_HEIGHT, left: 0, right: 0, borderTop: '0.5px solid var(--border)', pointerEvents: 'none' }} />
+                ))}
+
+                {/* 15-min guide lines */}
+                {HOURS.map((_, i) => (
+                  [1,2,3].map(q => (
+                    <div key={`${i}-${q}`} style={{ position: 'absolute', top: i * ROW_HEIGHT + q * (ROW_HEIGHT / 4), left: 0, right: 0, borderTop: '0.5px dashed rgba(255,255,255,0.04)', pointerEvents: 'none' }} />
+                  ))
+                ))}
+
+                {/* Sessions */}
+                {daySessions.map(s => {
+                  const top = timeToPx(parseISO(s.starts_at))
+                  const height = Math.max(durationToPx(s.duration_min || 60), 20)
+                  return (
                     <div key={s.id}
                       draggable
                       onDragStart={e => { e.stopPropagation(); dragSession.current = s }}
                       onClick={e => { e.stopPropagation(); setSelectedSession(s); setSelectedEvent(null); setShowForm(false); setShowBlockForm(false) }}
-                      style={{ background: clientColor(s.client_id), borderRadius: 4, padding: '2px 5px', marginBottom: 2, fontSize: 10, fontWeight: 600, color: '#1a1a1a', cursor: 'grab', lineHeight: 1.4, userSelect: 'none', position: 'relative', zIndex: 1 }}>
+                      style={{
+                        position: 'absolute', top, left: 2, right: 2, height,
+                        background: clientColor(s.client_id), borderRadius: 4,
+                        padding: '2px 5px', fontSize: 10, fontWeight: 600,
+                        color: '#1a1a1a', cursor: 'grab', lineHeight: 1.4,
+                        userSelect: 'none', zIndex: 2, overflow: 'hidden',
+                        boxShadow: '0 1px 3px rgba(0,0,0,0.3)'
+                      }}>
                       <div>{clientName(s.client_id)}</div>
                       <div style={{ fontWeight: 400, opacity: 0.8 }}>{format(parseISO(s.starts_at), 'HH:mm')}</div>
                     </div>
-                  ))}
-                  {slotEvents.map(e => (
+                  )
+                })}
+
+                {/* Coach events */}
+                {dayEvents.map(e => {
+                  const top = timeToPx(parseISO(e.starts_at))
+                  const height = Math.max(durationToPx(e.duration_min || 60), 20)
+                  return (
                     <div key={e.id}
                       draggable
                       onDragStart={ev => { ev.stopPropagation(); dragEvent.current = e }}
                       onClick={ev => { ev.stopPropagation(); setSelectedEvent(e); setSelectedSession(null); setShowForm(false); setShowBlockForm(false) }}
-                      style={{ background: BLOCK_COLOR, borderRadius: 4, padding: '2px 5px', marginBottom: 2, fontSize: 10, fontWeight: 600, color: '#f0f0f0', cursor: 'grab', lineHeight: 1.4, userSelect: 'none', position: 'relative', zIndex: 1 }}>
+                      style={{
+                        position: 'absolute', top, left: 2, right: 2, height,
+                        background: BLOCK_COLOR, borderRadius: 4,
+                        padding: '2px 5px', fontSize: 10, fontWeight: 600,
+                        color: '#f0f0f0', cursor: 'grab', lineHeight: 1.4,
+                        userSelect: 'none', zIndex: 2, overflow: 'hidden',
+                        boxShadow: '0 1px 3px rgba(0,0,0,0.3)'
+                      }}>
                       <div>{e.title}</div>
                       <div style={{ fontWeight: 400, opacity: 0.7 }}>{format(parseISO(e.starts_at), 'HH:mm')}</div>
                     </div>
-                  ))}
-                </div>
-              )
-            })}
-          </div>
-        ))}
+                  )
+                })}
+              </div>
+            )
+          })}
+        </div>
       </div>
     )
   }
@@ -358,7 +404,7 @@ export default function CoachCalendar({ clients }) {
 
       {view === 'week' && (
         <div style={{ fontSize: 10, color: 'var(--text3)', letterSpacing: '0.06em', marginBottom: 8, flexShrink: 0 }}>
-          <i className="ti ti-arrows-move" style={{ fontSize: 11 }} /> Drag to reschedule · Click position within hour to snap to 15-min slot
+          <i className="ti ti-arrows-move" style={{ fontSize: 11 }} /> Drag to reschedule · Click anywhere to schedule at exact time
         </div>
       )}
 
@@ -369,7 +415,6 @@ export default function CoachCalendar({ clients }) {
 
         {(showForm || showBlockForm || selectedSession || selectedEvent) && (
           <div style={{ width: 260, background: 'var(--surface)', borderRadius: 12, border: '0.5px solid var(--border2)', padding: 18, flexShrink: 0, overflowY: 'auto' }}>
-
             {showForm && (
               <>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
@@ -457,20 +502,20 @@ export default function CoachCalendar({ clients }) {
                 </div>
                 <div style={{ marginBottom: 10 }}>
                   <div className="section-label mb-8">Client</div>
-                  <div style={{ fontSize: 13, color: 'var(--text)' }}>{clientName(selectedSession.client_id)}</div>
+                  <div style={{ fontSize: 13 }}>{clientName(selectedSession.client_id)}</div>
                 </div>
                 <div style={{ marginBottom: 10 }}>
                   <div className="section-label mb-8">Title</div>
-                  <div style={{ fontSize: 13, color: 'var(--text)' }}>{selectedSession.title}</div>
+                  <div style={{ fontSize: 13 }}>{selectedSession.title}</div>
                 </div>
                 <div style={{ marginBottom: 10 }}>
                   <div className="section-label mb-8">Date & time</div>
-                  <div style={{ fontSize: 13, color: 'var(--text)' }}>{format(parseISO(selectedSession.starts_at), 'EEE d MMM yyyy, HH:mm')}</div>
+                  <div style={{ fontSize: 13 }}>{format(parseISO(selectedSession.starts_at), 'EEE d MMM yyyy, HH:mm')}</div>
                 </div>
                 {selectedSession.location && (
                   <div style={{ marginBottom: 10 }}>
                     <div className="section-label mb-8">Location</div>
-                    <div style={{ fontSize: 13, color: 'var(--text)' }}>{selectedSession.location}</div>
+                    <div style={{ fontSize: 13 }}>{selectedSession.location}</div>
                   </div>
                 )}
                 <div style={{ marginBottom: 16 }}>
@@ -493,20 +538,20 @@ export default function CoachCalendar({ clients }) {
                 </div>
                 <div style={{ marginBottom: 10 }}>
                   <div className="section-label mb-8">Title</div>
-                  <div style={{ fontSize: 13, color: 'var(--text)' }}>{selectedEvent.title}</div>
+                  <div style={{ fontSize: 13 }}>{selectedEvent.title}</div>
                 </div>
                 <div style={{ marginBottom: 10 }}>
                   <div className="section-label mb-8">Date & time</div>
-                  <div style={{ fontSize: 13, color: 'var(--text)' }}>{format(parseISO(selectedEvent.starts_at), 'EEE d MMM yyyy, HH:mm')}</div>
+                  <div style={{ fontSize: 13 }}>{format(parseISO(selectedEvent.starts_at), 'EEE d MMM yyyy, HH:mm')}</div>
                 </div>
                 <div style={{ marginBottom: 10 }}>
                   <div className="section-label mb-8">Duration</div>
-                  <div style={{ fontSize: 13, color: 'var(--text)' }}>{selectedEvent.duration_min} min</div>
+                  <div style={{ fontSize: 13 }}>{selectedEvent.duration_min} min</div>
                 </div>
                 {selectedEvent.notes && (
                   <div style={{ marginBottom: 16 }}>
                     <div className="section-label mb-8">Notes</div>
-                    <div style={{ fontSize: 13, color: 'var(--text)' }}>{selectedEvent.notes}</div>
+                    <div style={{ fontSize: 13 }}>{selectedEvent.notes}</div>
                   </div>
                 )}
                 <button className="btn btn-danger btn-sm" onClick={() => deleteBlockEvent(selectedEvent.id)}>Delete event</button>
