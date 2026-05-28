@@ -192,7 +192,7 @@ export default function CoachSessionManager({ clientId, client }) {
             fontFamily="Montserrat, sans-serif">{remaining}</text>
           <text x="80" y="92" textAnchor="middle" fontSize="11"
             fill="var(--text3)" fontFamily="Montserrat, sans-serif">
-            {pkg ? `of ${total} remaining` : 'no package'}
+            {pkg ? `${remaining} remaining` : 'no package'}
           </text>
         </svg>
       </div>

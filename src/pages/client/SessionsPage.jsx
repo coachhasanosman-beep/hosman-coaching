@@ -72,7 +72,7 @@ export default function SessionsPage({ clientId: propClientId }) {
               <text x="80" y="72" textAnchor="middle" fontSize="32" fontWeight="500"
                 fill="var(--text)" fontFamily="Montserrat, sans-serif">{remaining}</text>
               <text x="80" y="92" textAnchor="middle" fontSize="11"
-                fill="var(--text3)" fontFamily="Montserrat, sans-serif">of {total} remaining</text>
+                fill="var(--text3)" fontFamily="Montserrat, sans-serif">{remaining} remaining</text>
             </svg>
           </div>
         )}
