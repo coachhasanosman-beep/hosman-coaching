@@ -7,7 +7,7 @@ import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../hooks/useAuth'
 
 const HOURS = Array.from({ length: 15 }, (_, i) => i + 6)
-const ROW_HEIGHT = 64 // px per hour
+const ROW_HEIGHT = 64
 const CLIENT_COLORS = [
   '#c9a96e', '#4eca87', '#6eafc9', '#c96e9a', '#9a6ec9', '#c9b96e', '#6ec9b9'
 ]
@@ -27,6 +27,8 @@ export default function CoachCalendar({ clients }) {
   const [formTitle, setFormTitle]   = useState('Session with Hasan')
   const [formLocation, setFormLocation] = useState('')
   const [formDuration, setFormDuration] = useState(60)
+  const [formRepeat, setFormRepeat] = useState(false)
+  const [formRepeatWeeks, setFormRepeatWeeks] = useState(4)
   const [blockForm, setBlockForm]   = useState({ title: '', notes: '', date: '', time: '09:00', duration: 60 })
   const [saving, setSaving]         = useState(false)
   const [selectedSession, setSelectedSession] = useState(null)
@@ -71,7 +73,6 @@ export default function CoachCalendar({ clients }) {
     return c?.full_name || 'Unknown'
   }
 
-  // Convert time to pixels from top of grid
   function timeToPx(date) {
     const h = getHours(date) - 6
     const m = getMinutes(date)
@@ -124,15 +125,23 @@ export default function CoachCalendar({ clients }) {
     if (!formClient || !formDate) return toast.error('Select a client and date')
     setSaving(true)
     try {
-      const starts_at = new Date(`${formDate}T${formTime}`).toISOString()
-      const { data } = await supabase.from('scheduled_sessions').insert({
-        client_id: formClient, title: formTitle, location: formLocation,
-        starts_at, duration_min: formDuration, type: 'coached', status: 'scheduled', created_by: profile.id
-      }).select().single()
+      const weeks = formRepeat ? parseInt(formRepeatWeeks) : 1
+      const baseDate = new Date(`${formDate}T${formTime}`)
       const client = clients.find(c => c.id === formClient)
-      if (client) await sendCalendarInvite(data, client.email, client.full_name, false)
-      toast.success('Session scheduled — calendar invite sent')
+
+      for (let i = 0; i < weeks; i++) {
+        const starts_at = addWeeks(baseDate, i).toISOString()
+        const { data } = await supabase.from('scheduled_sessions').insert({
+          client_id: formClient, title: formTitle, location: formLocation,
+          starts_at, duration_min: formDuration, type: 'coached', status: 'scheduled', created_by: profile.id
+        }).select().single()
+        if (client) await sendCalendarInvite(data, client.email, client.full_name, false)
+      }
+
+      toast.success(formRepeat ? `${weeks} sessions scheduled — invites sent` : 'Session scheduled — calendar invite sent')
       setShowForm(false)
+      setFormRepeat(false)
+      setFormRepeatWeeks(4)
       loadAll()
     } catch (e) {
       toast.error('Failed to schedule')
@@ -214,7 +223,6 @@ export default function CoachCalendar({ clients }) {
 
     return (
       <div style={{ flex: 1, overflow: 'auto' }}>
-        {/* Day headers */}
         <div style={{ display: 'grid', gridTemplateColumns: '48px repeat(7, 1fr)', borderBottom: '0.5px solid var(--border2)', position: 'sticky', top: 0, background: 'var(--surface)', zIndex: 3 }}>
           <div />
           {allDays.map(d => (
@@ -225,18 +233,13 @@ export default function CoachCalendar({ clients }) {
           ))}
         </div>
 
-        {/* Time grid */}
         <div style={{ display: 'grid', gridTemplateColumns: '48px repeat(7, 1fr)', position: 'relative' }}>
-          {/* Hour labels */}
           <div style={{ position: 'relative', height: totalHeight }}>
             {HOURS.map((hour, i) => (
-              <div key={hour} style={{ position: 'absolute', top: i * ROW_HEIGHT, right: 6, fontSize: 10, color: 'var(--text3)', lineHeight: 1 }}>
-                {hour}:00
-              </div>
+              <div key={hour} style={{ position: 'absolute', top: i * ROW_HEIGHT, right: 6, fontSize: 10, color: 'var(--text3)', lineHeight: 1 }}>{hour}:00</div>
             ))}
           </div>
 
-          {/* Day columns */}
           {allDays.map(d => {
             const daySessions = sessions.filter(s => isSameDay(parseISO(s.starts_at), d) && s.status !== 'cancelled')
             const dayEvents = coachEvents.filter(e => isSameDay(parseISO(e.starts_at), d))
@@ -253,20 +256,14 @@ export default function CoachCalendar({ clients }) {
                   if (dragSession.current) { rescheduleSession(dragSession.current, d, y); dragSession.current = null }
                   else if (dragEvent.current) { rescheduleEvent(dragEvent.current, d, y); dragEvent.current = null }
                 }}>
-
-                {/* Hour lines */}
                 {HOURS.map((_, i) => (
                   <div key={i} style={{ position: 'absolute', top: i * ROW_HEIGHT, left: 0, right: 0, borderTop: '0.5px solid var(--border)', pointerEvents: 'none' }} />
                 ))}
-
-                {/* 15-min guide lines */}
                 {HOURS.map((_, i) => (
                   [1,2,3].map(q => (
                     <div key={`${i}-${q}`} style={{ position: 'absolute', top: i * ROW_HEIGHT + q * (ROW_HEIGHT / 4), left: 0, right: 0, borderTop: '0.5px dashed rgba(255,255,255,0.04)', pointerEvents: 'none' }} />
                   ))
                 ))}
-
-                {/* Sessions */}
                 {daySessions.map(s => {
                   const top = timeToPx(parseISO(s.starts_at))
                   const height = Math.max(durationToPx(s.duration_min || 60), 20)
@@ -275,21 +272,12 @@ export default function CoachCalendar({ clients }) {
                       draggable
                       onDragStart={e => { e.stopPropagation(); dragSession.current = s }}
                       onClick={e => { e.stopPropagation(); setSelectedSession(s); setSelectedEvent(null); setShowForm(false); setShowBlockForm(false) }}
-                      style={{
-                        position: 'absolute', top, left: 2, right: 2, height,
-                        background: clientColor(s.client_id), borderRadius: 4,
-                        padding: '2px 5px', fontSize: 10, fontWeight: 600,
-                        color: '#1a1a1a', cursor: 'grab', lineHeight: 1.4,
-                        userSelect: 'none', zIndex: 2, overflow: 'hidden',
-                        boxShadow: '0 1px 3px rgba(0,0,0,0.3)'
-                      }}>
+                      style={{ position: 'absolute', top, left: 2, right: 2, height, background: clientColor(s.client_id), borderRadius: 4, padding: '2px 5px', fontSize: 10, fontWeight: 600, color: '#1a1a1a', cursor: 'grab', lineHeight: 1.4, userSelect: 'none', zIndex: 2, overflow: 'hidden', boxShadow: '0 1px 3px rgba(0,0,0,0.3)' }}>
                       <div>{clientName(s.client_id)}</div>
                       <div style={{ fontWeight: 400, opacity: 0.8 }}>{format(parseISO(s.starts_at), 'HH:mm')}</div>
                     </div>
                   )
                 })}
-
-                {/* Coach events */}
                 {dayEvents.map(e => {
                   const top = timeToPx(parseISO(e.starts_at))
                   const height = Math.max(durationToPx(e.duration_min || 60), 20)
@@ -298,14 +286,7 @@ export default function CoachCalendar({ clients }) {
                       draggable
                       onDragStart={ev => { ev.stopPropagation(); dragEvent.current = e }}
                       onClick={ev => { ev.stopPropagation(); setSelectedEvent(e); setSelectedSession(null); setShowForm(false); setShowBlockForm(false) }}
-                      style={{
-                        position: 'absolute', top, left: 2, right: 2, height,
-                        background: BLOCK_COLOR, borderRadius: 4,
-                        padding: '2px 5px', fontSize: 10, fontWeight: 600,
-                        color: '#f0f0f0', cursor: 'grab', lineHeight: 1.4,
-                        userSelect: 'none', zIndex: 2, overflow: 'hidden',
-                        boxShadow: '0 1px 3px rgba(0,0,0,0.3)'
-                      }}>
+                      style={{ position: 'absolute', top, left: 2, right: 2, height, background: BLOCK_COLOR, borderRadius: 4, padding: '2px 5px', fontSize: 10, fontWeight: 600, color: '#f0f0f0', cursor: 'grab', lineHeight: 1.4, userSelect: 'none', zIndex: 2, overflow: 'hidden', boxShadow: '0 1px 3px rgba(0,0,0,0.3)' }}>
                       <div>{e.title}</div>
                       <div style={{ fontWeight: 400, opacity: 0.7 }}>{format(parseISO(e.starts_at), 'HH:mm')}</div>
                     </div>
@@ -415,6 +396,7 @@ export default function CoachCalendar({ clients }) {
 
         {(showForm || showBlockForm || selectedSession || selectedEvent) && (
           <div style={{ width: 260, background: 'var(--surface)', borderRadius: 12, border: '0.5px solid var(--border2)', padding: 18, flexShrink: 0, overflowY: 'auto' }}>
+
             {showForm && (
               <>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
@@ -445,12 +427,35 @@ export default function CoachCalendar({ clients }) {
                     <input className="input" type="time" step="900" value={formTime} onChange={e => setFormTime(e.target.value)} style={{ fontSize: 12 }} />
                   </div>
                 </div>
-                <div style={{ marginBottom: 14 }}>
+                <div style={{ marginBottom: 10 }}>
                   <label className="input-label">Duration (min)</label>
                   <input className="input" type="number" value={formDuration} onChange={e => setFormDuration(e.target.value)} style={{ fontSize: 12 }} />
                 </div>
+
+                {/* Repeat toggle */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: formRepeat ? 10 : 14 }}>
+                  <label className="input-label" style={{ margin: 0 }}>Repeat weekly</label>
+                  <div onClick={() => setFormRepeat(f => !f)}
+                    style={{ width: 36, height: 20, borderRadius: 10, cursor: 'pointer', background: formRepeat ? 'var(--gold)' : 'var(--surface3)', position: 'relative', transition: 'background 0.2s' }}>
+                    <div style={{ width: 16, height: 16, borderRadius: '50%', background: '#fff', position: 'absolute', top: 2, left: formRepeat ? 18 : 2, transition: 'left 0.2s' }} />
+                  </div>
+                </div>
+
+                {formRepeat && (
+                  <div style={{ marginBottom: 14 }}>
+                    <label className="input-label">Number of weeks (max 52)</label>
+                    <input className="input" type="number" min="2" max="52"
+                      value={formRepeatWeeks}
+                      onChange={e => setFormRepeatWeeks(Math.min(52, Math.max(2, parseInt(e.target.value) || 2)))}
+                      style={{ fontSize: 12 }} />
+                    <div style={{ fontSize: 10, color: 'var(--text3)', marginTop: 6 }}>
+                      Creates {formRepeatWeeks} sessions every week on the same day and time
+                    </div>
+                  </div>
+                )}
+
                 <button className="btn btn-gold btn-sm" onClick={saveSession} disabled={saving}>
-                  {saving ? 'Saving…' : 'Schedule & send invite'}
+                  {saving ? 'Saving…' : formRepeat ? `Schedule ${formRepeatWeeks} sessions` : 'Schedule & send invite'}
                 </button>
               </>
             )}
@@ -525,35 +530,34 @@ export default function CoachCalendar({ clients }) {
                   </span>
                 </div>
                 {selectedSession.status === 'scheduled' && (
-  <>
-    <div style={{ marginBottom: 10 }}>
-      <label className="input-label">Reschedule date</label>
-      <input className="input" type="date"
-        defaultValue={format(parseISO(selectedSession.starts_at), 'yyyy-MM-dd')}
-        id="reschedule-date" style={{ fontSize: 12, marginBottom: 6 }} />
-      <input className="input" type="time" step="900"
-        defaultValue={format(parseISO(selectedSession.starts_at), 'HH:mm')}
-        id="reschedule-time" style={{ fontSize: 12 }} />
-    </div>
-    <button className="btn btn-gold btn-sm" style={{ marginBottom: 8 }}
-      onClick={async () => {
-        const date = document.getElementById('reschedule-date').value
-        const time = document.getElementById('reschedule-time').value
-        if (!date || !time) return toast.error('Set a date and time')
-        const newStarts = new Date(`${date}T${time}`)
-        const starts_at = newStarts.toISOString()
-        await supabase.from('scheduled_sessions').update({ starts_at }).eq('id', selectedSession.id)
-        const client = clients.find(c => c.id === selectedSession.client_id)
-        if (client) await sendCalendarInvite({ ...selectedSession, starts_at }, client.email, client.full_name, false)
-        toast.success('Session rescheduled — client notified')
-        setSelectedSession(null)
-        loadAll()
-      }}>
-      Reschedule
-    </button>
-    <button className="btn btn-danger btn-sm" onClick={() => cancelSession(selectedSession.id)}>Cancel session</button>
-  </>
-)}
+                  <>
+                    <div style={{ marginBottom: 10 }}>
+                      <label className="input-label">Reschedule date</label>
+                      <input className="input" type="date"
+                        defaultValue={format(parseISO(selectedSession.starts_at), 'yyyy-MM-dd')}
+                        id="reschedule-date" style={{ fontSize: 12, marginBottom: 6 }} />
+                      <input className="input" type="time" step="900"
+                        defaultValue={format(parseISO(selectedSession.starts_at), 'HH:mm')}
+                        id="reschedule-time" style={{ fontSize: 12 }} />
+                    </div>
+                    <button className="btn btn-gold btn-sm" style={{ marginBottom: 8 }}
+                      onClick={async () => {
+                        const date = document.getElementById('reschedule-date').value
+                        const time = document.getElementById('reschedule-time').value
+                        if (!date || !time) return toast.error('Set a date and time')
+                        const starts_at = new Date(`${date}T${time}`).toISOString()
+                        await supabase.from('scheduled_sessions').update({ starts_at }).eq('id', selectedSession.id)
+                        const client = clients.find(c => c.id === selectedSession.client_id)
+                        if (client) await sendCalendarInvite({ ...selectedSession, starts_at }, client.email, client.full_name, false)
+                        toast.success('Session rescheduled — client notified')
+                        setSelectedSession(null)
+                        loadAll()
+                      }}>
+                      Reschedule
+                    </button>
+                    <button className="btn btn-danger btn-sm" onClick={() => cancelSession(selectedSession.id)}>Cancel session</button>
+                  </>
+                )}
               </>
             )}
 

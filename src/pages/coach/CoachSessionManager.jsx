@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { format } from 'date-fns'
+import { format, addWeeks } from 'date-fns'
 import toast from 'react-hot-toast'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../hooks/useAuth'
@@ -41,7 +41,15 @@ export default function CoachSessionManager({ clientId, client }) {
   const [sessions, setSessions] = useState([])
   const [showForm, setShowForm] = useState(false)
   const [showPkg, setShowPkg]   = useState(false)
-  const [form, setForm] = useState({ title: 'Session with Hasan', location: '', date: '', time: '10:00', duration: 60 })
+  const [form, setForm] = useState({
+    title: 'Session with Hasan',
+    location: '',
+    date: '',
+    time: '10:00',
+    duration: 60,
+    repeat: false,
+    repeatWeeks: 4
+  })
   const [pkgForm, setPkgForm] = useState({ sessions_total: '', price_paid: '' })
   const [saving, setSaving] = useState(false)
 
@@ -75,22 +83,31 @@ export default function CoachSessionManager({ clientId, client }) {
     if (!form.date) return toast.error('Date required')
     setSaving(true)
     try {
-      const starts_at = new Date(`${form.date}T${form.time}`).toISOString()
-      const { data } = await supabase.from('scheduled_sessions').insert({
-        client_id: clientId,
-        title: form.title,
-        location: form.location,
-        starts_at,
-        duration_min: form.duration,
-        type: 'coached',
-        status: 'scheduled',
-        created_by: profile.id
-      }).select().single()
+      const weeks = form.repeat ? parseInt(form.repeatWeeks) : 1
+      const baseDate = new Date(`${form.date}T${form.time}`)
 
-      await sendCalendarInvite(data, client.email, client.full_name, false)
-      toast.success('Session scheduled — calendar invite sent')
+      for (let i = 0; i < weeks; i++) {
+        const starts_at = addWeeks(baseDate, i).toISOString()
+        const { data } = await supabase.from('scheduled_sessions').insert({
+          client_id: clientId,
+          title: form.title,
+          location: form.location,
+          starts_at,
+          duration_min: form.duration,
+          type: 'coached',
+          status: 'scheduled',
+          created_by: profile.id
+        }).select().single()
+
+        await sendCalendarInvite(data, client.email, client.full_name, false)
+      }
+
+      toast.success(form.repeat
+        ? `${weeks} sessions scheduled — calendar invites sent`
+        : 'Session scheduled — calendar invite sent'
+      )
       setShowForm(false)
-      setForm({ title: 'Session with Hasan', location: '', date: '', time: '10:00', duration: 60 })
+      setForm({ title: 'Session with Hasan', location: '', date: '', time: '10:00', duration: 60, repeat: false, repeatWeeks: 4 })
       load()
     } catch (e) {
       toast.error('Failed to schedule')
@@ -187,33 +204,21 @@ export default function CoachSessionManager({ clientId, client }) {
               transform="rotate(-90 80 80)"
               style={{ transition: 'stroke-dasharray 0.6s ease' }}/>
           )}
-          <text x="80" y="72" textAnchor="middle" fontSize="32" fontWeight="500"
+          <text x="80" y="88" textAnchor="middle" fontSize="32" fontWeight="500"
             fill={!pkg || remaining <= 0 ? 'var(--red)' : 'var(--text)'}
             fontFamily="Montserrat, sans-serif">{remaining}</text>
-          <text x="80" y="92" textAnchor="middle" fontSize="11"
-            fill="var(--text3)" fontFamily="Montserrat, sans-serif">
-            {pkg ? `${remaining} remaining` : 'no package'}
-          </text>
         </svg>
       </div>
 
-      {/* Manual adjust buttons — always visible */}
+      {/* Manual adjust buttons */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 12, marginBottom: 16 }}>
-        <button
-          onClick={() => adjustSessions(1)}
-          title="Deduct a session"
-          style={{ background: 'var(--surface2)', border: '0.5px solid var(--border2)', color: 'var(--text)', cursor: 'pointer', borderRadius: 6, width: 32, height: 32, fontSize: 18, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-          −
-        </button>
+        <button onClick={() => adjustSessions(1)} title="Deduct a session"
+          style={{ background: 'var(--surface2)', border: '0.5px solid var(--border2)', color: 'var(--text)', cursor: 'pointer', borderRadius: 6, width: 32, height: 32, fontSize: 18, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>−</button>
         <span style={{ fontSize: 11, color: 'var(--text3)' }}>
           {pkg ? `${pkg.sessions_used} used · ${pkg.sessions_total} total` : 'no package'}
         </span>
-        <button
-          onClick={() => adjustSessions(-1)}
-          title="Add back a session"
-          style={{ background: 'var(--surface2)', border: '0.5px solid var(--border2)', color: 'var(--text)', cursor: 'pointer', borderRadius: 6, width: 32, height: 32, fontSize: 18, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-          +
-        </button>
+        <button onClick={() => adjustSessions(-1)} title="Add back a session"
+          style={{ background: 'var(--surface2)', border: '0.5px solid var(--border2)', color: 'var(--text)', cursor: 'pointer', borderRadius: 6, width: 32, height: 32, fontSize: 18, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>+</button>
       </div>
 
       {/* Package actions */}
@@ -282,8 +287,40 @@ export default function CoachSessionManager({ clientId, client }) {
                 onChange={e => setForm(f => ({ ...f, duration: e.target.value }))} />
             </div>
           </div>
+
+          {/* Repeat toggle */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: form.repeat ? 10 : 14 }}>
+            <label className="input-label" style={{ margin: 0 }}>Repeat weekly</label>
+            <div
+              onClick={() => setForm(f => ({ ...f, repeat: !f.repeat }))}
+              style={{
+                width: 36, height: 20, borderRadius: 10, cursor: 'pointer',
+                background: form.repeat ? 'var(--gold)' : 'var(--surface3)',
+                position: 'relative', transition: 'background 0.2s'
+              }}>
+              <div style={{
+                width: 16, height: 16, borderRadius: '50%', background: '#fff',
+                position: 'absolute', top: 2,
+                left: form.repeat ? 18 : 2,
+                transition: 'left 0.2s'
+              }} />
+            </div>
+          </div>
+
+          {form.repeat && (
+            <div style={{ marginBottom: 14 }}>
+              <label className="input-label">Number of weeks (max 52)</label>
+              <input className="input" type="number" min="2" max="52"
+                value={form.repeatWeeks}
+                onChange={e => setForm(f => ({ ...f, repeatWeeks: Math.min(52, Math.max(2, parseInt(e.target.value) || 2)) }))} />
+              <div style={{ fontSize: 10, color: 'var(--text3)', marginTop: 6 }}>
+                This will create {form.repeatWeeks} sessions every week on the same day and time
+              </div>
+            </div>
+          )}
+
           <button className="btn btn-primary btn-sm" onClick={addSession} disabled={saving}>
-            {saving ? 'Saving…' : 'Schedule & send invite'}
+            {saving ? 'Saving…' : form.repeat ? `Schedule ${form.repeatWeeks} sessions` : 'Schedule & send invite'}
           </button>
         </div>
       )}
