@@ -3,6 +3,22 @@ import { format, isPast, isFuture } from 'date-fns'
 import toast from 'react-hot-toast'
 import { supabase } from '../../lib/supabase'
 
+async function sendCalendarInvite(session, clientEmail, clientName, cancelled = false) {
+  try {
+    const { data: { session: authSession } } = await supabase.auth.getSession()
+    await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/send-calendar-invite`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${authSession.access_token}`
+      },
+      body: JSON.stringify({ session, clientEmail, clientName, cancelled })
+    })
+  } catch (e) {
+    console.error('Calendar invite failed:', e)
+  }
+}
+
 async function sendThresholdEmail(supabaseUrl, authToken, clientEmail, clientName, remaining, packageSize) {
   try {
     await fetch(`${supabaseUrl}/functions/v1/session-threshold-email`, {
@@ -19,9 +35,9 @@ async function sendThresholdEmail(supabaseUrl, authToken, clientEmail, clientNam
 }
 
 export default function CoachSessions({ onSelectClient, clients }) {
-  const [tab, setTab]         = useState('upcoming')
+  const [tab, setTab]           = useState('upcoming')
   const [sessions, setSessions] = useState([])
-  const [loading, setLoading] = useState(true)
+  const [loading, setLoading]   = useState(true)
 
   useEffect(() => { loadSessions() }, [])
 
@@ -39,7 +55,6 @@ export default function CoachSessions({ onSelectClient, clients }) {
   async function markComplete(session) {
     await supabase.from('scheduled_sessions').update({ status: 'completed' }).eq('id', session.id)
 
-    // Get client package
     const { data: pkg } = await supabase
       .from('packages')
       .select('*')
@@ -55,7 +70,6 @@ export default function CoachSessions({ onSelectClient, clients }) {
       newRemaining = pkg.sessions_total - newUsed
     }
 
-    // Send threshold email
     const { data: { session: authSession } } = await supabase.auth.getSession()
     const clientEmail = session.profiles?.email
     const clientName = session.profiles?.full_name
@@ -93,10 +107,25 @@ export default function CoachSessions({ onSelectClient, clients }) {
     loadSessions()
   }
 
+  async function cancelSession(session) {
+    if (!window.confirm(`Cancel session with ${session.profiles?.full_name} on ${format(new Date(session.starts_at), 'EEE d MMM, HH:mm')}?`)) return
+
+    await supabase.from('scheduled_sessions').update({ status: 'cancelled' }).eq('id', session.id)
+
+    const clientEmail = session.profiles?.email
+    const clientName = session.profiles?.full_name
+    if (clientEmail) {
+      await sendCalendarInvite(session, clientEmail, clientName, true)
+    }
+
+    toast.success('Session cancelled — client notified')
+    loadSessions()
+  }
+
   const upcoming = sessions.filter(s => s.status === 'scheduled' && isFuture(new Date(s.starts_at)))
   const past = sessions.filter(s => s.status === 'completed' || (s.status === 'scheduled' && isPast(new Date(s.starts_at))))
 
-  const displayed = tab === 'upcoming' ? upcoming : past.reverse()
+  const displayed = tab === 'upcoming' ? upcoming : [...past].reverse()
 
   return (
     <div style={{ flex: 1, overflowY: 'auto' }}>
@@ -136,8 +165,12 @@ export default function CoachSessions({ onSelectClient, clients }) {
             </div>
             <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexShrink: 0 }}>
               {s.status === 'scheduled' && (
-                <button className="btn btn-ghost btn-sm" style={{ width: 'auto', padding: '6px 10px', fontSize: 10 }}
-                  onClick={() => markComplete(s)}>Done</button>
+                <>
+                  <button className="btn btn-ghost btn-sm" style={{ width: 'auto', padding: '6px 10px', fontSize: 10 }}
+                    onClick={() => markComplete(s)}>Done</button>
+                  <button className="btn btn-danger btn-sm" style={{ width: 'auto', padding: '6px 10px', fontSize: 10 }}
+                    onClick={() => cancelSession(s)}>Cancel</button>
+                </>
               )}
               {s.status === 'completed' && (
                 <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
