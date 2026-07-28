@@ -12,7 +12,7 @@ serve(async (req) => {
     const { clientEmail, clientName, remaining, packageSize } = await req.json()
 
     const isSingleSession = packageSize === 1
-    const appUrl = 'https://hosman-coaching.vercel.app/app/sessions'
+    const appUrl = 'https://hosman-coaching.vercel.app'
     const resendKey = Deno.env.get('RESEND_API_KEY')!
 
     let subject = ''
