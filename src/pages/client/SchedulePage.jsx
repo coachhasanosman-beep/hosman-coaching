@@ -1,11 +1,11 @@
 import { useEffect, useState } from 'react'
 import { format, isToday, isPast, isFuture, startOfWeek, endOfWeek,
-  eachDayOfInterval, addWeeks, subWeeks, isSameDay, parseISO } from 'date-fns'
+  eachDayOfInterval, addWeeks, subWeeks, isSameDay } from 'date-fns'
 import toast from 'react-hot-toast'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../hooks/useAuth'
 
-const SLOT_DURATION = 60 // minutes per slot
+const SLOT_DURATION = 60
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL
 
 export default function SchedulePage({ clientId: propClientId }) {
@@ -26,7 +26,10 @@ export default function SchedulePage({ clientId: propClientId }) {
   const [form, setForm]                 = useState({ title: '', date: '', time: '', notes: '' })
 
   useEffect(() => { if (clientId) load() }, [clientId])
-  useEffect(() => { loadBusy() }, [currentWeek])
+
+  useEffect(() => {
+    if (showBooking) loadBusy()
+  }, [currentWeek, showBooking])
 
   async function load() {
     setLoading(true)
@@ -57,7 +60,9 @@ export default function SchedulePage({ clientId: propClientId }) {
         .lte('starts_at', end.toISOString())
     ])
 
-    setBusySlots([...(sessRes.data || []), ...(evtRes.data || [])])
+    const busy = [...(sessRes.data || []), ...(evtRes.data || [])]
+    console.log('Busy slots loaded:', busy)
+    setBusySlots(busy)
   }
 
   function isSlotAvailable(date, hour) {
@@ -68,12 +73,10 @@ export default function SchedulePage({ clientId: propClientId }) {
     const slotTime = `${String(hour).padStart(2, '0')}:00`
     if (slotTime < avail.start_time || slotTime >= avail.end_time) return false
 
-    // Check if slot is in the past
     const slotDate = new Date(date)
     slotDate.setHours(hour, 0, 0, 0)
     if (slotDate < new Date()) return false
 
-    // Check if slot overlaps with busy time
     const isBusy = busySlots.some(b => {
       const bStart = new Date(b.starts_at)
       const bEnd = new Date(bStart.getTime() + (b.duration_min || 60) * 60000)
@@ -82,7 +85,6 @@ export default function SchedulePage({ clientId: propClientId }) {
       return sStart < bEnd && sEnd > bStart
     })
 
-    // Check if already requested
     const isRequested = requests.some(r => {
       const rDate = new Date(r.requested_at)
       return isSameDay(rDate, date) && rDate.getHours() === hour && r.status === 'pending'
@@ -106,7 +108,6 @@ export default function SchedulePage({ clientId: propClientId }) {
         status: 'pending'
       })
 
-      // Notify coach
       const { data: { session: authSession } } = await supabase.auth.getSession()
       await fetch(`${SUPABASE_URL}/functions/v1/booking-request-notify`, {
         method: 'POST',
@@ -173,7 +174,6 @@ export default function SchedulePage({ clientId: propClientId }) {
   const weekStart = startOfWeek(currentWeek, { weekStartsOn: 1 })
   const weekDays = eachDayOfInterval({ start: weekStart, end: endOfWeek(currentWeek, { weekStartsOn: 1 }) })
 
-  // Get all hours that have at least one available slot this week
   const allHours = []
   weekDays.forEach(d => {
     const dayOfWeek = d.getDay()
@@ -233,7 +233,6 @@ export default function SchedulePage({ clientId: propClientId }) {
       <div className="page-scroll">
         {loading ? <div style={{ color: 'var(--text3)', fontSize: 13 }}>Loading…</div> : (
           <>
-            {/* Book a session */}
             {!showBooking && !showLog && (
               <button className="btn btn-gold mb-20" onClick={() => setShowBooking(true)}>
                 <i className="ti ti-calendar-plus" style={{ fontSize: 14 }} />
@@ -241,7 +240,6 @@ export default function SchedulePage({ clientId: propClientId }) {
               </button>
             )}
 
-            {/* Booking calendar */}
             {showBooking && (
               <div className="card mb-20">
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
@@ -250,7 +248,6 @@ export default function SchedulePage({ clientId: propClientId }) {
                     style={{ background: 'none', border: 'none', color: 'var(--text3)', cursor: 'pointer', fontSize: 16 }}>×</button>
                 </div>
 
-                {/* Week navigation */}
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
                   <button onClick={() => setCurrentWeek(subWeeks(currentWeek, 1))}
                     style={{ background: 'var(--surface2)', border: 'none', color: 'var(--text)', cursor: 'pointer', borderRadius: 6, padding: '4px 10px', fontSize: 14 }}>‹</button>
@@ -261,7 +258,6 @@ export default function SchedulePage({ clientId: propClientId }) {
                     style={{ background: 'var(--surface2)', border: 'none', color: 'var(--text)', cursor: 'pointer', borderRadius: 6, padding: '4px 10px', fontSize: 14 }}>›</button>
                 </div>
 
-                {/* Legend */}
                 <div style={{ display: 'flex', gap: 12, marginBottom: 12 }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
                     <div style={{ width: 10, height: 10, borderRadius: 2, background: 'var(--gold)' }} />
@@ -273,12 +269,11 @@ export default function SchedulePage({ clientId: propClientId }) {
                   </div>
                 </div>
 
-                {/* Calendar grid */}
                 <div style={{ overflowX: 'auto' }}>
                   <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11 }}>
                     <thead>
                       <tr>
-                        <th style={{ width: 40, color: 'var(--text3)', fontWeight: 400, padding: '4px 4px', textAlign: 'right' }}></th>
+                        <th style={{ width: 40, padding: '4px' }}></th>
                         {weekDays.slice(0, 6).map(d => (
                           <th key={d.toISOString()} style={{ padding: '4px', textAlign: 'center', color: isToday(d) ? 'var(--gold)' : 'var(--text3)', fontWeight: 500 }}>
                             <div>{format(d, 'EEE')}</div>
@@ -299,7 +294,8 @@ export default function SchedulePage({ clientId: propClientId }) {
                                 <div
                                   onClick={() => available && setSelectedSlot({ date: d, hour })}
                                   style={{
-                                    height: 28, borderRadius: 4, cursor: available ? 'pointer' : 'default',
+                                    height: 28, borderRadius: 4,
+                                    cursor: available ? 'pointer' : 'default',
                                     background: isSelected ? 'var(--gold)' : available ? 'rgba(201,169,110,0.15)' : 'var(--surface2)',
                                     border: isSelected ? '1.5px solid var(--gold)' : available ? '1px solid rgba(201,169,110,0.3)' : '1px solid transparent',
                                     transition: 'all 0.1s'
@@ -314,7 +310,6 @@ export default function SchedulePage({ clientId: propClientId }) {
                   </table>
                 </div>
 
-                {/* Selected slot confirmation */}
                 {selectedSlot && (
                   <div style={{ marginTop: 16, padding: 12, background: 'var(--gold-bg)', border: '0.5px solid var(--gold-bdr)', borderRadius: 8 }}>
                     <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 8, color: 'var(--gold)' }}>
@@ -333,7 +328,6 @@ export default function SchedulePage({ clientId: propClientId }) {
               </div>
             )}
 
-            {/* Pending requests */}
             {pendingRequests.length > 0 && (
               <div style={{ marginBottom: 20 }}>
                 <div className="section-label mb-8">Pending requests</div>
@@ -353,7 +347,6 @@ export default function SchedulePage({ clientId: propClientId }) {
               </div>
             )}
 
-            {/* Upcoming sessions */}
             {Object.entries(upcomingGroups).sort().map(([date, items]) => {
               const d = new Date(date)
               const label = isToday(d) ? 'Today' : format(d, 'EEE d MMM').toUpperCase()
@@ -363,7 +356,6 @@ export default function SchedulePage({ clientId: propClientId }) {
               <div style={{ color: 'var(--text3)', fontSize: 13, marginBottom: 20 }}>No upcoming sessions scheduled.</div>
             )}
 
-            {/* Log solo session */}
             {!showLog && !showBooking && (
               <button className="btn btn-ghost mb-20" onClick={() => setShowLog(true)}>
                 <i className="ti ti-plus" style={{ fontSize: 14 }} />
@@ -403,7 +395,6 @@ export default function SchedulePage({ clientId: propClientId }) {
               </div>
             )}
 
-            {/* Past sessions */}
             {past.length > 0 && <DayGroup label="Past sessions" items={past.slice(0, 20)} />}
           </>
         )}
