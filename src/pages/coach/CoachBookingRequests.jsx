@@ -24,23 +24,37 @@ export default function CoachBookingRequests({ clients }) {
 
   async function load() {
     setLoading(true)
-    const { data } = await supabase
-      .from('booking_requests')
-      .select('*, profiles:client_id(id, full_name, email)')
-      .order('created_at', { ascending: false })
-    setRequests(data || [])
+    try {
+      const { data: reqs } = await supabase
+        .from('booking_requests')
+        .select('*')
+        .order('created_at', { ascending: false })
+
+      const clientIds = [...new Set((reqs || []).map(r => r.client_id))]
+      let profileMap = {}
+      if (clientIds.length > 0) {
+        const { data: profiles } = await supabase
+          .from('profiles')
+          .select('id, full_name, email')
+          .in('id', clientIds)
+        profileMap = Object.fromEntries((profiles || []).map(p => [p.id, p]))
+      }
+
+      const data = (reqs || []).map(r => ({ ...r, profiles: profileMap[r.client_id] || null }))
+      setRequests(data)
+    } catch (e) {
+      console.error('Failed to load requests:', e)
+    }
     setLoading(false)
   }
 
   async function confirm(request) {
     try {
-      // Update request status
       await supabase.from('booking_requests').update({ status: 'confirmed' }).eq('id', request.id)
 
-      // Create a scheduled session
       const { data: session } = await supabase.from('scheduled_sessions').insert({
         client_id: request.client_id,
-        title: `Session with Hasan`,
+        title: 'Session with Hasan',
         starts_at: request.requested_at,
         duration_min: request.duration_min,
         type: 'coached',
@@ -48,25 +62,17 @@ export default function CoachBookingRequests({ clients }) {
         created_by: request.client_id
       }).select().single()
 
-      // Send calendar invite
       const clientEmail = request.profiles?.email
       const clientName = request.profiles?.full_name
       if (clientEmail && session) {
         await sendCalendarInvite(session, clientEmail, clientName, false)
       }
 
-      // Send confirmation email to client
-      const { data: { session: authSession } } = await supabase.auth.getSession()
-      await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/send-calendar-invite`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${authSession.access_token}` },
-        body: JSON.stringify({ session, clientEmail, clientName, cancelled: false })
-      })
-
       toast.success('Request confirmed — client notified')
       load()
     } catch (e) {
       toast.error('Failed to confirm')
+      console.error(e)
     }
   }
 
@@ -74,22 +80,7 @@ export default function CoachBookingRequests({ clients }) {
     if (!window.confirm(`Decline ${request.profiles?.full_name}'s request?`)) return
     try {
       await supabase.from('booking_requests').update({ status: 'declined' }).eq('id', request.id)
-
-      // Email client to let them know
-      const resendRes = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/booking-request-notify`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          clientName: request.profiles?.full_name,
-          clientEmail: request.profiles?.email,
-          requestedAt: request.requested_at,
-          duration: request.duration_min,
-          notes: request.notes,
-          declined: true
-        })
-      })
-
-      toast.success('Request declined — client notified')
+      toast.success('Request declined')
       load()
     } catch (e) {
       toast.error('Failed to decline')
@@ -103,16 +94,13 @@ export default function CoachBookingRequests({ clients }) {
     <div style={{ flex: 1, overflowY: 'auto' }}>
       <div style={{ marginBottom: 24 }}>
         <h1 style={{ marginBottom: 4 }}>Booking Requests</h1>
-        <div style={{ fontSize: 13, color: 'var(--text3)' }}>
-          Session requests from clients
-        </div>
+        <div style={{ fontSize: 13, color: 'var(--text3)' }}>Session requests from clients</div>
       </div>
 
       {loading ? (
         <div style={{ color: 'var(--text3)', fontSize: 13 }}>Loading…</div>
       ) : (
         <>
-          {/* Pending */}
           {pending.length === 0 ? (
             <div style={{ color: 'var(--text3)', fontSize: 13, marginBottom: 24, textAlign: 'center', paddingTop: 20 }}>
               No pending requests
@@ -156,7 +144,6 @@ export default function CoachBookingRequests({ clients }) {
             </div>
           )}
 
-          {/* Past requests */}
           {past.length > 0 && (
             <div>
               <div className="section-label mb-8">Past requests</div>
