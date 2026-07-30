@@ -1,33 +1,136 @@
 import { useEffect, useState } from 'react'
-import { format, isToday, isPast, isFuture } from 'date-fns'
+import { format, isToday, isPast, isFuture, startOfWeek, endOfWeek,
+  eachDayOfInterval, addWeeks, subWeeks, isSameDay, parseISO } from 'date-fns'
 import toast from 'react-hot-toast'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../hooks/useAuth'
+
+const SLOT_DURATION = 60 // minutes per slot
+const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL
 
 export default function SchedulePage({ clientId: propClientId }) {
   const { profile } = useAuth()
   const clientId = propClientId || profile?.id
 
-  const [sessions, setSessions]       = useState([])
-  const [requests, setRequests]       = useState([])
-  const [loading, setLoading]         = useState(true)
-  const [showLog, setShowLog]         = useState(false)
-  const [showRequest, setShowRequest] = useState(false)
-  const [form, setForm]               = useState({ title: '', date: '', time: '', notes: '' })
-  const [reqForm, setReqForm]         = useState({ date: '', time: '', duration: 60, notes: '' })
-  const [saving, setSaving]           = useState(false)
+  const [sessions, setSessions]         = useState([])
+  const [requests, setRequests]         = useState([])
+  const [availability, setAvailability] = useState([])
+  const [busySlots, setBusySlots]       = useState([])
+  const [loading, setLoading]           = useState(true)
+  const [currentWeek, setCurrentWeek]   = useState(new Date())
+  const [selectedSlot, setSelectedSlot] = useState(null)
+  const [showLog, setShowLog]           = useState(false)
+  const [showBooking, setShowBooking]   = useState(false)
+  const [reqNotes, setReqNotes]         = useState('')
+  const [saving, setSaving]             = useState(false)
+  const [form, setForm]                 = useState({ title: '', date: '', time: '', notes: '' })
 
   useEffect(() => { if (clientId) load() }, [clientId])
+  useEffect(() => { loadBusy() }, [currentWeek])
 
   async function load() {
     setLoading(true)
-    const [sessRes, reqRes] = await Promise.all([
+    const [sessRes, reqRes, availRes] = await Promise.all([
       supabase.from('scheduled_sessions').select('*').eq('client_id', clientId).order('starts_at', { ascending: false }),
-      supabase.from('booking_requests').select('*').eq('client_id', clientId).order('created_at', { ascending: false })
+      supabase.from('booking_requests').select('*').eq('client_id', clientId).order('created_at', { ascending: false }),
+      supabase.from('coach_availability').select('*')
     ])
     setSessions(sessRes.data || [])
     setRequests(reqRes.data || [])
+    setAvailability(availRes.data || [])
     setLoading(false)
+  }
+
+  async function loadBusy() {
+    const start = startOfWeek(currentWeek, { weekStartsOn: 1 })
+    const end = endOfWeek(currentWeek, { weekStartsOn: 1 })
+
+    const [sessRes, evtRes] = await Promise.all([
+      supabase.from('scheduled_sessions')
+        .select('starts_at, duration_min')
+        .gte('starts_at', start.toISOString())
+        .lte('starts_at', end.toISOString())
+        .neq('status', 'cancelled'),
+      supabase.from('coach_events')
+        .select('starts_at, duration_min')
+        .gte('starts_at', start.toISOString())
+        .lte('starts_at', end.toISOString())
+    ])
+
+    setBusySlots([...(sessRes.data || []), ...(evtRes.data || [])])
+  }
+
+  function isSlotAvailable(date, hour) {
+    const dayOfWeek = date.getDay()
+    const avail = availability.find(a => a.day_of_week === dayOfWeek)
+    if (!avail) return false
+
+    const slotTime = `${String(hour).padStart(2, '0')}:00`
+    if (slotTime < avail.start_time || slotTime >= avail.end_time) return false
+
+    // Check if slot is in the past
+    const slotDate = new Date(date)
+    slotDate.setHours(hour, 0, 0, 0)
+    if (slotDate < new Date()) return false
+
+    // Check if slot overlaps with busy time
+    const isBusy = busySlots.some(b => {
+      const bStart = new Date(b.starts_at)
+      const bEnd = new Date(bStart.getTime() + (b.duration_min || 60) * 60000)
+      const sStart = new Date(slotDate)
+      const sEnd = new Date(sStart.getTime() + SLOT_DURATION * 60000)
+      return sStart < bEnd && sEnd > bStart
+    })
+
+    // Check if already requested
+    const isRequested = requests.some(r => {
+      const rDate = new Date(r.requested_at)
+      return isSameDay(rDate, date) && rDate.getHours() === hour && r.status === 'pending'
+    })
+
+    return !isBusy && !isRequested
+  }
+
+  async function submitRequest() {
+    if (!selectedSlot) return
+    setSaving(true)
+    try {
+      const requested_at = new Date(selectedSlot.date)
+      requested_at.setHours(selectedSlot.hour, 0, 0, 0)
+
+      await supabase.from('booking_requests').insert({
+        client_id: clientId,
+        requested_at: requested_at.toISOString(),
+        duration_min: SLOT_DURATION,
+        notes: reqNotes,
+        status: 'pending'
+      })
+
+      // Notify coach
+      const { data: { session: authSession } } = await supabase.auth.getSession()
+      await fetch(`${SUPABASE_URL}/functions/v1/booking-request-notify`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${authSession.access_token}` },
+        body: JSON.stringify({
+          clientName: profile.full_name,
+          clientEmail: profile.email,
+          requestedAt: requested_at.toISOString(),
+          duration: SLOT_DURATION,
+          notes: reqNotes
+        })
+      })
+
+      toast.success('Request sent to your coach')
+      setSelectedSlot(null)
+      setReqNotes('')
+      setShowBooking(false)
+      load()
+      loadBusy()
+    } catch (e) {
+      toast.error('Failed to send request')
+    } finally {
+      setSaving(false)
+    }
   }
 
   async function logSession() {
@@ -36,13 +139,8 @@ export default function SchedulePage({ clientId: propClientId }) {
     try {
       const starts_at = new Date(`${form.date}T${form.time || '00:00'}`).toISOString()
       await supabase.from('scheduled_sessions').insert({
-        client_id: clientId,
-        title: form.title,
-        starts_at,
-        type: 'solo',
-        status: 'completed',
-        notes: form.notes,
-        created_by: profile.id
+        client_id: clientId, title: form.title, starts_at,
+        type: 'solo', status: 'completed', notes: form.notes, created_by: profile.id
       })
       toast.success('Session logged')
       setForm({ title: '', date: '', time: '', notes: '' })
@@ -54,47 +152,6 @@ export default function SchedulePage({ clientId: propClientId }) {
       setSaving(false)
     }
   }
-
-  async function submitRequest() {
-  if (!reqForm.date || !reqForm.time) return toast.error('Date and time required')
-  setSaving(true)
-  try {
-    const requested_at = new Date(`${reqForm.date}T${reqForm.time}`).toISOString()
-    await supabase.from('booking_requests').insert({
-      client_id: clientId,
-      requested_at,
-      duration_min: parseInt(reqForm.duration),
-      notes: reqForm.notes,
-      status: 'pending'
-    })
-
-    // Notify coach
-    const { data: { session: authSession } } = await supabase.auth.getSession()
-    await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/booking-request-notify`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${authSession.access_token}`
-      },
-      body: JSON.stringify({
-        clientName: profile.full_name,
-        clientEmail: profile.email,
-        requestedAt: requested_at,
-        duration: reqForm.duration,
-        notes: reqForm.notes
-      })
-    })
-
-    toast.success('Request sent to your coach')
-    setReqForm({ date: '', time: '', duration: 60, notes: '' })
-    setShowRequest(false)
-    load()
-  } catch (e) {
-    toast.error('Failed to send request')
-  } finally {
-    setSaving(false)
-  }
-}
 
   function statusTag(s) {
     if (s.status === 'cancelled') return <span className="tag tag-muted">Cancelled</span>
@@ -110,9 +167,26 @@ export default function SchedulePage({ clientId: propClientId }) {
   }
 
   const upcoming = sessions.filter(s => s.status === 'scheduled' && isFuture(new Date(s.starts_at)))
-  const past     = sessions.filter(s => s.status !== 'scheduled' || isPast(new Date(s.starts_at)))
+  const past = sessions.filter(s => s.status !== 'scheduled' || isPast(new Date(s.starts_at)))
   const pendingRequests = requests.filter(r => r.status === 'pending')
-  const pastRequests = requests.filter(r => r.status !== 'pending')
+
+  const weekStart = startOfWeek(currentWeek, { weekStartsOn: 1 })
+  const weekDays = eachDayOfInterval({ start: weekStart, end: endOfWeek(currentWeek, { weekStartsOn: 1 }) })
+
+  // Get all hours that have at least one available slot this week
+  const allHours = []
+  weekDays.forEach(d => {
+    const dayOfWeek = d.getDay()
+    const avail = availability.find(a => a.day_of_week === dayOfWeek)
+    if (avail) {
+      const startH = parseInt(avail.start_time.split(':')[0])
+      const endH = parseInt(avail.end_time.split(':')[0])
+      for (let h = startH; h < endH; h++) {
+        if (!allHours.includes(h)) allHours.push(h)
+      }
+    }
+  })
+  allHours.sort((a, b) => a - b)
 
   function groupByDate(items) {
     const groups = {}
@@ -159,47 +233,103 @@ export default function SchedulePage({ clientId: propClientId }) {
       <div className="page-scroll">
         {loading ? <div style={{ color: 'var(--text3)', fontSize: 13 }}>Loading…</div> : (
           <>
-            {/* Book a session button */}
-            {!showRequest && !showLog && (
-              <button className="btn btn-gold mb-20" onClick={() => setShowRequest(true)}>
+            {/* Book a session */}
+            {!showBooking && !showLog && (
+              <button className="btn btn-gold mb-20" onClick={() => setShowBooking(true)}>
                 <i className="ti ti-calendar-plus" style={{ fontSize: 14 }} />
-                Request a session
+                Book a session
               </button>
             )}
 
-            {/* Booking request form */}
-            {showRequest && (
+            {/* Booking calendar */}
+            {showBooking && (
               <div className="card mb-20">
-                <h3 style={{ marginBottom: 14 }}>Request a session</h3>
-                <div style={{ fontSize: 12, color: 'var(--text3)', marginBottom: 14 }}>
-                  Your coach will confirm or suggest an alternative time.
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+                  <h3>Book a session</h3>
+                  <button onClick={() => { setShowBooking(false); setSelectedSlot(null) }}
+                    style={{ background: 'none', border: 'none', color: 'var(--text3)', cursor: 'pointer', fontSize: 16 }}>×</button>
                 </div>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 12 }}>
-                  <div>
-                    <label className="input-label">Date</label>
-                    <input className="input" type="date" value={reqForm.date}
-                      onChange={e => setReqForm(f => ({ ...f, date: e.target.value }))} />
+
+                {/* Week navigation */}
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+                  <button onClick={() => setCurrentWeek(subWeeks(currentWeek, 1))}
+                    style={{ background: 'var(--surface2)', border: 'none', color: 'var(--text)', cursor: 'pointer', borderRadius: 6, padding: '4px 10px', fontSize: 14 }}>‹</button>
+                  <div style={{ fontSize: 12, color: 'var(--text3)', fontWeight: 600 }}>
+                    {format(weekStart, 'd MMM')} – {format(weekDays[6], 'd MMM yyyy')}
                   </div>
-                  <div>
-                    <label className="input-label">Time</label>
-                    <input className="input" type="time" step="900" value={reqForm.time}
-                      onChange={e => setReqForm(f => ({ ...f, time: e.target.value }))} />
+                  <button onClick={() => setCurrentWeek(addWeeks(currentWeek, 1))}
+                    style={{ background: 'var(--surface2)', border: 'none', color: 'var(--text)', cursor: 'pointer', borderRadius: 6, padding: '4px 10px', fontSize: 14 }}>›</button>
+                </div>
+
+                {/* Legend */}
+                <div style={{ display: 'flex', gap: 12, marginBottom: 12 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                    <div style={{ width: 10, height: 10, borderRadius: 2, background: 'var(--gold)' }} />
+                    <span style={{ fontSize: 10, color: 'var(--text3)' }}>Available</span>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                    <div style={{ width: 10, height: 10, borderRadius: 2, background: 'var(--surface3)' }} />
+                    <span style={{ fontSize: 10, color: 'var(--text3)' }}>Unavailable</span>
                   </div>
                 </div>
-                <div className="mb-12">
-                  <label className="input-label">Duration (min)</label>
-                  <input className="input" type="number" value={reqForm.duration}
-                    onChange={e => setReqForm(f => ({ ...f, duration: e.target.value }))} />
+
+                {/* Calendar grid */}
+                <div style={{ overflowX: 'auto' }}>
+                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11 }}>
+                    <thead>
+                      <tr>
+                        <th style={{ width: 40, color: 'var(--text3)', fontWeight: 400, padding: '4px 4px', textAlign: 'right' }}></th>
+                        {weekDays.slice(0, 6).map(d => (
+                          <th key={d.toISOString()} style={{ padding: '4px', textAlign: 'center', color: isToday(d) ? 'var(--gold)' : 'var(--text3)', fontWeight: 500 }}>
+                            <div>{format(d, 'EEE')}</div>
+                            <div style={{ fontSize: 13, color: isToday(d) ? 'var(--gold)' : 'var(--text)' }}>{format(d, 'd')}</div>
+                          </th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {allHours.map(hour => (
+                        <tr key={hour}>
+                          <td style={{ fontSize: 10, color: 'var(--text3)', textAlign: 'right', paddingRight: 6, paddingTop: 2 }}>{hour}:00</td>
+                          {weekDays.slice(0, 6).map(d => {
+                            const available = isSlotAvailable(d, hour)
+                            const isSelected = selectedSlot && isSameDay(selectedSlot.date, d) && selectedSlot.hour === hour
+                            return (
+                              <td key={d.toISOString()} style={{ padding: 2 }}>
+                                <div
+                                  onClick={() => available && setSelectedSlot({ date: d, hour })}
+                                  style={{
+                                    height: 28, borderRadius: 4, cursor: available ? 'pointer' : 'default',
+                                    background: isSelected ? 'var(--gold)' : available ? 'rgba(201,169,110,0.15)' : 'var(--surface2)',
+                                    border: isSelected ? '1.5px solid var(--gold)' : available ? '1px solid rgba(201,169,110,0.3)' : '1px solid transparent',
+                                    transition: 'all 0.1s'
+                                  }}
+                                />
+                              </td>
+                            )
+                          })}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
                 </div>
-                <div className="mb-12">
-                  <label className="input-label">Notes (optional)</label>
-                  <input className="input" placeholder="Any preferences or requests?" value={reqForm.notes}
-                    onChange={e => setReqForm(f => ({ ...f, notes: e.target.value }))} />
-                </div>
-                <button className="btn btn-primary mb-8" onClick={submitRequest} disabled={saving}>
-                  {saving ? 'Sending…' : 'Send request'}
-                </button>
-                <button className="btn btn-ghost" onClick={() => setShowRequest(false)}>Cancel</button>
+
+                {/* Selected slot confirmation */}
+                {selectedSlot && (
+                  <div style={{ marginTop: 16, padding: 12, background: 'var(--gold-bg)', border: '0.5px solid var(--gold-bdr)', borderRadius: 8 }}>
+                    <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 8, color: 'var(--gold)' }}>
+                      {format(selectedSlot.date, 'EEE d MMM')} at {String(selectedSlot.hour).padStart(2, '0')}:00
+                    </div>
+                    <div className="mb-12">
+                      <label className="input-label">Notes for your coach (optional)</label>
+                      <input className="input" placeholder="Any preferences?" value={reqNotes}
+                        onChange={e => setReqNotes(e.target.value)} style={{ fontSize: 12 }} />
+                    </div>
+                    <button className="btn btn-gold btn-sm" onClick={submitRequest} disabled={saving}>
+                      {saving ? 'Sending…' : 'Request this slot'}
+                    </button>
+                  </div>
+                )}
               </div>
             )}
 
@@ -214,12 +344,8 @@ export default function SchedulePage({ clientId: propClientId }) {
                     </div>
                     <div className="sched-dot dot-gold" />
                     <div style={{ flex: 1 }}>
-                      <div style={{ fontSize: 13, fontWeight: 500 }}>
-                        {format(new Date(r.requested_at), 'EEE d MMM')}
-                      </div>
-                      <div style={{ fontSize: 11, color: 'var(--text3)' }}>
-                        {r.duration_min} min{r.notes ? ` · ${r.notes}` : ''}
-                      </div>
+                      <div style={{ fontSize: 13, fontWeight: 500 }}>{format(new Date(r.requested_at), 'EEE d MMM')}</div>
+                      <div style={{ fontSize: 11, color: 'var(--text3)' }}>{r.duration_min} min{r.notes ? ` · ${r.notes}` : ''}</div>
                     </div>
                     {requestStatusTag(r)}
                   </div>
@@ -237,15 +363,14 @@ export default function SchedulePage({ clientId: propClientId }) {
               <div style={{ color: 'var(--text3)', fontSize: 13, marginBottom: 20 }}>No upcoming sessions scheduled.</div>
             )}
 
-            {/* Log solo session button */}
-            {!showLog && !showRequest && (
+            {/* Log solo session */}
+            {!showLog && !showBooking && (
               <button className="btn btn-ghost mb-20" onClick={() => setShowLog(true)}>
-                <i className="ti ti-plus" style={{ fontSize: 14 }} aria-hidden="true" />
+                <i className="ti ti-plus" style={{ fontSize: 14 }} />
                 Log a session
               </button>
             )}
 
-            {/* Log form */}
             {showLog && (
               <div className="card mb-20">
                 <h3 style={{ marginBottom: 14 }}>Log a session</h3>
@@ -279,33 +404,7 @@ export default function SchedulePage({ clientId: propClientId }) {
             )}
 
             {/* Past sessions */}
-            {past.length > 0 && (
-              <DayGroup label="Past sessions" items={past.slice(0, 20)} />
-            )}
-
-            {/* Past requests */}
-            {pastRequests.length > 0 && (
-              <div style={{ marginBottom: 20 }}>
-                <div className="section-label mb-8">Past requests</div>
-                {pastRequests.map(r => (
-                  <div key={r.id} className="sched-item">
-                    <div style={{ fontSize: 12, color: 'var(--text3)', minWidth: 44 }}>
-                      {format(new Date(r.requested_at), 'HH:mm')}
-                    </div>
-                    <div className={`sched-dot ${r.status === 'confirmed' ? 'dot-green' : 'dot-muted'}`} />
-                    <div style={{ flex: 1 }}>
-                      <div style={{ fontSize: 13, fontWeight: 500 }}>
-                        {format(new Date(r.requested_at), 'EEE d MMM')}
-                      </div>
-                      <div style={{ fontSize: 11, color: 'var(--text3)' }}>
-                        {r.duration_min} min{r.notes ? ` · ${r.notes}` : ''}
-                      </div>
-                    </div>
-                    {requestStatusTag(r)}
-                  </div>
-                ))}
-              </div>
-            )}
+            {past.length > 0 && <DayGroup label="Past sessions" items={past.slice(0, 20)} />}
           </>
         )}
       </div>
