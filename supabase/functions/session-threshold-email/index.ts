@@ -32,6 +32,32 @@ serve(async (req) => {
         </div>
         <p style="color:#aaa;font-size:11px;text-align:center">${appUrl}</p>
       `
+    } else if (remaining === 2 && !isSingleSession) {
+      shouldSend = true
+      subject = 'You have 2 sessions remaining'
+      bodyContent = `
+        <p>Hi ${clientName},</p>
+        <p>Just a heads up — you have <strong>2 sessions remaining</strong> on your current package.</p>
+        <div style="text-align:center;margin:28px 0">
+          <a href="${appUrl}" style="background:#c9a96e;color:#1a1a1a;padding:14px 32px;border-radius:8px;text-decoration:none;font-weight:600;font-size:14px;letter-spacing:0.06em">
+            PURCHASE SESSIONS
+          </a>
+        </div>
+        <p style="color:#aaa;font-size:11px;text-align:center">${appUrl}</p>
+      `
+    } else if (remaining === 1 && !isSingleSession) {
+      shouldSend = true
+      subject = 'You have 1 session remaining'
+      bodyContent = `
+        <p>Hi ${clientName},</p>
+        <p>Just a heads up — you have <strong>1 session remaining</strong> on your current package.</p>
+        <div style="text-align:center;margin:28px 0">
+          <a href="${appUrl}" style="background:#c9a96e;color:#1a1a1a;padding:14px 32px;border-radius:8px;text-decoration:none;font-weight:600;font-size:14px;letter-spacing:0.06em">
+            PURCHASE SESSIONS
+          </a>
+        </div>
+        <p style="color:#aaa;font-size:11px;text-align:center">${appUrl}</p>
+      `
     } else if (remaining === 0 && !isSingleSession) {
       shouldSend = true
       subject = "You've used all your sessions"

@@ -1,9 +1,11 @@
 import { useEffect, useState } from 'react'
-import { supabase } from '../../lib/supabase'
+import { supabase, inviteClient } from '../../lib/supabase'
 import toast from 'react-hot-toast'
 
-export default function CoachOverview({ clients, onSelectClient }) {
-  const [summaries, setSummaries] = useState({})
+export default function CoachOverview({ clients, onSelectClient, onClientsUpdated }) {
+  const [summaries, setSummaries]   = useState({})
+  const [inviting, setInviting]     = useState(false)
+  const [inviteForm, setInviteForm] = useState({ name: '', email: '' })
 
   useEffect(() => {
     clients.forEach(loadSummary)
@@ -21,6 +23,19 @@ export default function CoachOverview({ clients, onSelectClient }) {
         next: schedRes.data?.[0]
       }
     }))
+  }
+
+  async function handleInvite(e) {
+    e.preventDefault()
+    try {
+      await inviteClient(inviteForm.email, inviteForm.name)
+      toast.success(`Invite sent to ${inviteForm.email}`)
+      setInviteForm({ name: '', email: '' })
+      setInviting(false)
+      onClientsUpdated?.()
+    } catch (err) {
+      toast.error(err.message || 'Invite failed')
+    }
   }
 
   async function resendWelcome(e, client) {
@@ -48,7 +63,35 @@ export default function CoachOverview({ clients, onSelectClient }) {
 
   return (
     <div>
-      <h1 style={{ marginBottom: 6 }}>All clients</h1>
+      {/* Header */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 6 }}>
+        <h1>All clients</h1>
+        {!inviting ? (
+          <button className="btn btn-gold btn-sm" style={{ width: 'auto' }} onClick={() => setInviting(true)}>
+            <i className="ti ti-user-plus" style={{ fontSize: 13 }} /> Invite client
+          </button>
+        ) : (
+          <div style={{ background: 'var(--surface)', border: '0.5px solid var(--border2)', borderRadius: 12, padding: 16, width: 280 }}>
+            <form onSubmit={handleInvite}>
+              <div style={{ marginBottom: 8 }}>
+                <label className="input-label">Full name</label>
+                <input className="input" placeholder="Full name" value={inviteForm.name}
+                  onChange={e => setInviteForm(f => ({ ...f, name: e.target.value }))}
+                  style={{ fontSize: 12, padding: '10px 12px' }} required />
+              </div>
+              <div style={{ marginBottom: 12 }}>
+                <label className="input-label">Email</label>
+                <input className="input" type="email" placeholder="Email" value={inviteForm.email}
+                  onChange={e => setInviteForm(f => ({ ...f, email: e.target.value }))}
+                  style={{ fontSize: 12, padding: '10px 12px' }} required />
+              </div>
+              <button className="btn btn-primary btn-sm" type="submit" style={{ marginBottom: 6 }}>Send invite</button>
+              <button type="button" className="btn btn-ghost btn-sm" onClick={() => setInviting(false)}>Cancel</button>
+            </form>
+          </div>
+        )}
+      </div>
+
       <div style={{ color: 'var(--text3)', fontSize: 13, marginBottom: 28 }}>
         {clients.length} client{clients.length !== 1 ? 's' : ''} · Select a client to manage their programme, schedule and metrics
       </div>
@@ -99,7 +142,7 @@ export default function CoachOverview({ clients, onSelectClient }) {
 
       {clients.length === 0 && (
         <div style={{ textAlign: 'center', paddingTop: 80, color: 'var(--text3)', fontSize: 13 }}>
-          No clients yet. Use "Invite client" in the sidebar to get started.
+          No clients yet. Use "Invite client" to get started.
         </div>
       )}
     </div>
