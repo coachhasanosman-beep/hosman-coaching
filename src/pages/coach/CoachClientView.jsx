@@ -2,9 +2,10 @@ import { useState } from 'react'
 import ProgrammePage from '../client/ProgrammePage'
 import SchedulePage  from '../client/SchedulePage'
 import MetricsPage   from '../client/MetricsPage'
-import CoachSessionManager from './CoachSessionManager'
+import CoachSessionManager   from './CoachSessionManager'
+import CoachClientAnalytics  from './CoachClientAnalytics'
 
-const TABS = ['Programme', 'Schedule', 'Sessions', 'Metrics']
+const TABS = ['Programme', 'Schedule', 'Sessions', 'Metrics', 'Analytics']
 
 export default function CoachClientView({ client, onBack }) {
   const [tab, setTab] = useState(0)
@@ -28,7 +29,7 @@ export default function CoachClientView({ client, onBack }) {
       </div>
 
       {/* Tabs */}
-      <div style={{ display: 'flex', borderBottom: '0.5px solid var(--border2)', marginBottom: 24, marginLeft: -32, marginRight: -32, paddingLeft: 32 }}>
+      <div style={{ display: 'flex', borderBottom: '0.5px solid var(--border2)', marginBottom: 24, marginLeft: -32, marginRight: -32, paddingLeft: 32, overflowX: 'auto' }}>
         {TABS.map((t, i) => (
           <button key={t}
             onClick={() => setTab(i)}
@@ -37,19 +38,21 @@ export default function CoachClientView({ client, onBack }) {
               borderBottom: `1.5px solid ${tab === i ? 'var(--text)' : 'transparent'}`,
               color: tab === i ? 'var(--text)' : 'var(--text3)',
               fontFamily: 'Montserrat, sans-serif', fontSize: 12, fontWeight: 600,
-              letterSpacing: '0.08em', textTransform: 'uppercase', cursor: 'pointer'
+              letterSpacing: '0.08em', textTransform: 'uppercase', cursor: 'pointer',
+              whiteSpace: 'nowrap', flexShrink: 0
             }}>
             {t}
           </button>
         ))}
       </div>
 
-      {/* Content — reuse client pages passing clientId */}
+      {/* Content */}
       <div style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
         {tab === 0 && <ProgrammePage clientId={client.id} />}
         {tab === 1 && <SchedulePage  clientId={client.id} />}
         {tab === 2 && <CoachSessionManager clientId={client.id} client={client} />}
         {tab === 3 && <MetricsPage   clientId={client.id} />}
+        {tab === 4 && <CoachClientAnalytics client={client} />}
       </div>
     </div>
   )
