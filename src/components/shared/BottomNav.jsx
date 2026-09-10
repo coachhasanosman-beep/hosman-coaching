@@ -1,11 +1,12 @@
 import { useNavigate, useLocation } from 'react-router-dom'
 
 const items = [
-  { path: '/app',          label: 'Home',      icon: 'ti-home' },
-  { path: '/app/programme',label: 'Programme', icon: 'ti-list-check' },
-  { path: '/app/schedule', label: 'Schedule',  icon: 'ti-calendar' },
-  { path: '/app/sessions', label: 'Sessions',  icon: 'ti-ticket' },
-  { path: '/app/metrics',  label: 'Metrics',   icon: 'ti-chart-line' },
+  { path: '/app',           label: 'Home',      icon: 'ti-home' },
+  { path: '/app/programme', label: 'Programme', icon: 'ti-list-check' },
+  { path: '/app/schedule',  label: 'Schedule',  icon: 'ti-calendar' },
+  { path: '/app/sessions',  label: 'Sessions',  icon: 'ti-ticket' },
+  { path: '/app/metrics',   label: 'Metrics',   icon: 'ti-chart-line' },
+  { path: '/app/review',    label: 'Review',    icon: 'ti-award' },
 ]
 
 export default function BottomNav() {
