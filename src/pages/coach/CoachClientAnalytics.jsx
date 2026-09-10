@@ -154,7 +154,6 @@ export default function CoachClientAnalytics({ client }) {
     try {
       const { data: { session: authSession } } = await supabase.auth.getSession()
 
-      // Build sections data to store
       const sectionsData = {
         coachedSessions: recapSections.coachedSessions ? { week: sessionStats.week, month: sessionStats.month, year: sessionStats.year, weekly: sessionStats.weekly } : null,
         soloSessions: recapSections.soloSessions ? { week: soloStats.week, month: soloStats.month, year: soloStats.year, weekly: soloStats.weekly } : null,
@@ -163,49 +162,23 @@ export default function CoachClientAnalytics({ client }) {
         bodyMetrics: recapSections.bodyMetrics && metrics.length > 0 ? metrics[0] : null
       }
 
-      // Save recap to database
-      await supabase.from('recaps').insert({
-        client_id: client.id,
-        title: 'Training in Review',
-        sections: sectionsData,
-        summary: recapSummary,
-        personal_note: personalNote
-      })
-
-      // Send notification email
-      await fetch('https://api.resend.com/emails', {
+      const res = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/send-recap`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${authSession.access_token}`
         },
         body: JSON.stringify({
-          from: 'HOSMAN Coaching <noreply@hosmancoaching.com>',
-          to: [client.email],
-          subject: 'Your Training in Review is ready',
-          html: `
-            <div style="font-family:sans-serif;max-width:480px;margin:0 auto;color:#1a1a1a">
-              <div style="background:#1a1a1a;padding:24px;text-align:center">
-                <h1 style="color:#c9a96e;font-size:20px;letter-spacing:0.15em;margin:0">HOSMAN</h1>
-                <p style="color:#888;font-size:11px;letter-spacing:0.1em;margin:4px 0 0">PREMIUM COACHING</p>
-              </div>
-              <div style="padding:32px 24px">
-                <h2 style="margin:0 0 16px">Your Training in Review is ready</h2>
-                <p>Hi ${client.full_name},</p>
-                <p>Your coach has put together a review of your training progress. Open the app to see your full breakdown including session stats, load progression charts and more.</p>
-                ${personalNote ? `<div style="background:#f5f5f5;border-radius:8px;padding:16px;margin:16px 0"><p style="margin:0 0 6px;font-weight:600">A note from Hasan:</p><p style="margin:0">${personalNote}</p></div>` : ''}
-                <div style="text-align:center;margin:28px 0">
-                  <a href="https://hosman-coaching.vercel.app"
-                    style="background:#c9a96e;color:#1a1a1a;padding:14px 32px;border-radius:8px;text-decoration:none;font-weight:600;font-size:14px;letter-spacing:0.06em">
-                    VIEW IN APP
-                  </a>
-                </div>
-                <p style="color:#888;font-size:12px;margin-top:24px">HOSMAN Premium Coaching</p>
-              </div>
-            </div>
-          `
+          clientId: client.id,
+          clientEmail: client.email,
+          clientName: client.full_name,
+          personalNote,
+          summary: recapSummary,
+          sectionsData
         })
       })
+
+      if (!res.ok) throw new Error(await res.text())
 
       toast.success('Training in Review sent!')
       setShowRecap(false)
@@ -318,8 +291,7 @@ export default function CoachClientAnalytics({ client }) {
           )}
 
           {currSession?.exercises.map(ex => {
-            const rawData = ex.week_loads.map((val, i) => ({ week: `Wk ${i + 1}`, load: val !== '' && val !== null ? parseFloat(val) || null : null }))
-            const data = rawData.filter(d => d.load !== null)
+            const data = ex.week_loads.map((val, i) => ({ week: `Wk ${i + 1}`, load: val !== '' && val !== null ? parseFloat(val) || null : null })).filter(d => d.load !== null)
             if (data.length < 2) return null
             const minLoad = Math.min(...data.map(d => d.load))
             const maxLoad = Math.max(...data.map(d => d.load))
