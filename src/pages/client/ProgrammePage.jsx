@@ -243,24 +243,18 @@ export default function ProgrammePage({ clientId: propClientId }) {
     updateSession(prev => prev.map((s, i) => i !== idx ? s : { ...s, name }))
   }
 
-  function onDragStart(idx) { dragSrc.current = `ex-${idx}` }
-function onDrop(targetIdx) {
-  if (!dragSrc.current?.startsWith('ex-')) return
-  const fromIdx = parseInt(dragSrc.current.split('-')[1])
-  if (fromIdx === targetIdx) return
-  updateSession(prev => prev.map((s, si) => {
-    if (si !== activeTab) return s
-    const exs = [...s.exercises]
-    const [moved] = exs.splice(fromIdx, 1)
-    exs.splice(targetIdx, 0, moved)
-    return { ...s, exercises: exs.map((e, i) => ({ ...e, position: i })) }
-  }))
-  dragSrc.current = null
-}
+  function onDragStart(idx) {
+    dragSrc.current = `ex-${idx}`
+  }
+
+  function onDrop(targetIdx) {
+    if (!dragSrc.current?.startsWith('ex-')) return
+    const fromIdx = parseInt(dragSrc.current.split('-')[1])
+    if (fromIdx === targetIdx) return
     updateSession(prev => prev.map((s, si) => {
       if (si !== activeTab) return s
       const exs = [...s.exercises]
-      const [moved] = exs.splice(dragSrc.current, 1)
+      const [moved] = exs.splice(fromIdx, 1)
       exs.splice(targetIdx, 0, moved)
       return { ...s, exercises: exs.map((e, i) => ({ ...e, position: i })) }
     }))
@@ -268,22 +262,23 @@ function onDrop(targetIdx) {
   }
 
   function onTabDragStart(idx) { dragSrc.current = `tab-${idx}` }
+
   async function onTabDrop(targetIdx) {
-  if (!dragSrc.current?.startsWith('tab-')) return
-  const fromIdx = parseInt(dragSrc.current.split('-')[1])
-  if (fromIdx === targetIdx) return
-  dragSrc.current = null
+    if (!dragSrc.current?.startsWith('tab-')) return
+    const fromIdx = parseInt(dragSrc.current.split('-')[1])
+    if (fromIdx === targetIdx) return
+    dragSrc.current = null
 
-  const updated = [...sessions]
-  const [moved] = updated.splice(fromIdx, 1)
-  updated.splice(targetIdx, 0, moved)
-  setSessions(updated)
-  setActiveTab(targetIdx)
+    const updated = [...sessions]
+    const [moved] = updated.splice(fromIdx, 1)
+    updated.splice(targetIdx, 0, moved)
+    setSessions(updated)
+    setActiveTab(targetIdx)
 
-  for (let i = 0; i < updated.length; i++) {
-    await supabase.from('programme_sessions').update({ position: i }).eq('id', updated[i].id)
+    for (let i = 0; i < updated.length; i++) {
+      await supabase.from('programme_sessions').update({ position: i }).eq('id', updated[i].id)
+    }
   }
-}
 
   function autoResize(e) {
     e.target.style.height = 'auto'
@@ -309,8 +304,7 @@ function onDrop(targetIdx) {
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '0 20px 10px', flexShrink: 0, overflowX: 'auto' }}>
         {programmes.map(p => (
           <div key={p.id} style={{ display: 'flex', alignItems: 'center', gap: 2, flexShrink: 0 }}>
-            <button
-              onClick={() => switchBlock(p)}
+            <button onClick={() => switchBlock(p)}
               style={{
                 padding: '5px 12px', borderRadius: 20, fontSize: 11, fontWeight: 600,
                 letterSpacing: '0.06em', cursor: 'pointer',
@@ -342,7 +336,7 @@ function onDrop(targetIdx) {
         )}
       </div>
 
-      {/* Session tabs — draggable */}
+      {/* Session tabs */}
       <div className="tab-bar" onDragOver={e => e.preventDefault()}>
         {sessions.map((s, i) => (
           <div key={s.id}
