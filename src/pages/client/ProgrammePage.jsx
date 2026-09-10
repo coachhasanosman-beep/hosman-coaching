@@ -171,6 +171,19 @@ export default function ProgrammePage({ clientId: propClientId }) {
     })
   }
 
+  function moveExercise(ei, direction) {
+    const targetIdx = ei + direction
+    const curr = sessions[activeTab]
+    if (targetIdx < 0 || targetIdx >= curr.exercises.length) return
+    updateSession(prev => prev.map((s, si) => {
+      if (si !== activeTab) return s
+      const exs = [...s.exercises]
+      const [moved] = exs.splice(ei, 1)
+      exs.splice(targetIdx, 0, moved)
+      return { ...s, exercises: exs.map((e, i) => ({ ...e, position: i })) }
+    }))
+  }
+
   function onCellChange(exIdx, field, value) {
     updateSession(prev => prev.map((s, si) => {
       if (si !== activeTab) return s
@@ -241,24 +254,6 @@ export default function ProgrammePage({ clientId: propClientId }) {
     setRenaming(null)
     const name = value.trim().toUpperCase() || sessions[idx].name
     updateSession(prev => prev.map((s, i) => i !== idx ? s : { ...s, name }))
-  }
-
-  function onDragStart(idx) {
-    dragSrc.current = `ex-${idx}`
-  }
-
-  function onDrop(targetIdx) {
-    if (!dragSrc.current?.startsWith('ex-')) return
-    const fromIdx = parseInt(dragSrc.current.split('-')[1])
-    if (fromIdx === targetIdx) return
-    updateSession(prev => prev.map((s, si) => {
-      if (si !== activeTab) return s
-      const exs = [...s.exercises]
-      const [moved] = exs.splice(fromIdx, 1)
-      exs.splice(targetIdx, 0, moved)
-      return { ...s, exercises: exs.map((e, i) => ({ ...e, position: i })) }
-    }))
-    dragSrc.current = null
   }
 
   function onTabDragStart(idx) { dragSrc.current = `tab-${idx}` }
@@ -374,7 +369,7 @@ export default function ProgrammePage({ clientId: propClientId }) {
 
       <div style={{ fontSize: 10, color: 'var(--text3)', letterSpacing: '0.06em', padding: '6px 20px 4px', display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
         <i className="ti ti-pencil" style={{ fontSize: 11 }} aria-hidden="true" />
-        Tap any cell to edit · Drag <i className="ti ti-grip-vertical" style={{ fontSize: 11 }} aria-hidden="true" /> to reorder rows · Drag tabs to reorder sessions · Double-tap tab to rename · × to delete
+        Tap any cell to edit · Use ▲▼ to reorder rows · Drag tabs to reorder sessions · Double-tap tab to rename · × to delete
       </div>
 
       {/* Table */}
@@ -383,7 +378,7 @@ export default function ProgrammePage({ clientId: propClientId }) {
           <table className="prog-table" style={{ minWidth: 640, borderCollapse: 'separate', borderSpacing: 0 }}>
             <thead>
               <tr>
-                <th style={{ width: 22 }}></th>
+                <th style={{ width: 32 }}></th>
                 <th style={{ minWidth: 140 }}>Exercise</th>
                 <th style={{ minWidth: 80 }}>Sets × Reps</th>
                 <th style={{ minWidth: 100 }}>Notes</th>
@@ -395,15 +390,22 @@ export default function ProgrammePage({ clientId: propClientId }) {
             </thead>
             <tbody>
               {curr?.exercises.map((ex, ei) => (
-                <tr key={ex.id}
-                  draggable
-                  onDragStart={() => onDragStart(ei)}
-                  onDragOver={e => e.preventDefault()}
-                  onDrop={() => onDrop(ei)}>
-                  <td style={{ verticalAlign: 'top', paddingTop: 10 }}>
-                    <span className="drag-handle">
-                      <i className="ti ti-grip-vertical" aria-hidden="true" />
-                    </span>
+                <tr key={ex.id}>
+                  <td style={{ verticalAlign: 'middle', padding: '2px 4px' }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1 }}>
+                      <button
+                        onClick={() => moveExercise(ei, -1)}
+                        disabled={ei === 0}
+                        style={{ background: 'none', border: 'none', color: ei === 0 ? 'transparent' : 'var(--text3)', cursor: ei === 0 ? 'default' : 'pointer', padding: '1px 4px', fontSize: 9, lineHeight: 1, opacity: ei === 0 ? 0 : 0.6 }}>
+                        ▲
+                      </button>
+                      <button
+                        onClick={() => moveExercise(ei, 1)}
+                        disabled={ei === curr.exercises.length - 1}
+                        style={{ background: 'none', border: 'none', color: ei === curr.exercises.length - 1 ? 'transparent' : 'var(--text3)', cursor: ei === curr.exercises.length - 1 ? 'default' : 'pointer', padding: '1px 4px', fontSize: 9, lineHeight: 1, opacity: ei === curr.exercises.length - 1 ? 0 : 0.6 }}>
+                        ▼
+                      </button>
+                    </div>
                   </td>
                   <td>
                     <textarea
