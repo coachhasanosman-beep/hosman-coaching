@@ -243,10 +243,20 @@ export default function ProgrammePage({ clientId: propClientId }) {
     updateSession(prev => prev.map((s, i) => i !== idx ? s : { ...s, name }))
   }
 
-  function onDragStart(idx) { dragSrc.current = idx }
-  function onDrop(targetIdx) {
-    if (dragSrc.current === null || typeof dragSrc.current !== 'number') return
-    if (dragSrc.current === targetIdx) return
+  function onDragStart(idx) { dragSrc.current = `ex-${idx}` }
+function onDrop(targetIdx) {
+  if (!dragSrc.current?.startsWith('ex-')) return
+  const fromIdx = parseInt(dragSrc.current.split('-')[1])
+  if (fromIdx === targetIdx) return
+  updateSession(prev => prev.map((s, si) => {
+    if (si !== activeTab) return s
+    const exs = [...s.exercises]
+    const [moved] = exs.splice(fromIdx, 1)
+    exs.splice(targetIdx, 0, moved)
+    return { ...s, exercises: exs.map((e, i) => ({ ...e, position: i })) }
+  }))
+  dragSrc.current = null
+}
     updateSession(prev => prev.map((s, si) => {
       if (si !== activeTab) return s
       const exs = [...s.exercises]
