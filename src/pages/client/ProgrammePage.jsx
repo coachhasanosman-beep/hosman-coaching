@@ -17,6 +17,8 @@ export default function ProgrammePage({ clientId: propClientId }) {
   const [saving, setSaving]         = useState(false)
   const [loading, setLoading]       = useState(true)
   const [creatingBlock, setCreatingBlock] = useState(false)
+  const [showBlockDuplicateModal, setShowBlockDuplicateModal] = useState(false)
+  const [blockToDuplicate, setBlockToDuplicate] = useState(null)
   const saveTimer = useRef(null)
   const dragSrc   = useRef(null)
   const tableRef  = useRef(null)
@@ -109,6 +111,58 @@ export default function ProgrammePage({ clientId: propClientId }) {
     }
   }
 
+  async function duplicateBlock(prog, withLoads) {
+    setCreatingBlock(true)
+    try {
+      const nextNum = programmes.length + 1
+      const { data: newProg } = await supabase.from('programmes')
+        .insert({ client_id: clientId, title: `Block ${nextNum}` })
+        .select().single()
+
+      // Load sessions from source block
+      const { data: sourceSessions } = await supabase
+        .from('programme_sessions')
+        .select('*, exercises(*)')
+        .eq('programme_id', prog.id)
+        .order('position')
+
+      // Duplicate each session and its exercises
+      for (const sess of (sourceSessions || [])) {
+        const { data: newSess } = await supabase.from('programme_sessions')
+          .insert({ programme_id: newProg.id, name: sess.name, position: sess.position })
+          .select().single()
+
+        const exercises = (sess.exercises || []).sort((a, b) => a.position - b.position)
+        for (const ex of exercises) {
+          const weekLoads = withLoads
+            ? (Array.isArray(ex.week_loads) ? ex.week_loads : JSON.parse(ex.week_loads || '[]'))
+            : ['', '', '', '', '', '']
+          await supabase.from('exercises').insert({
+            programme_session_id: newSess.id,
+            position: ex.position,
+            name: ex.name,
+            sets_reps: ex.sets_reps,
+            notes: ex.notes,
+            week_loads: weekLoads
+          })
+        }
+      }
+
+      const updated = [...programmes, newProg]
+      setProgrammes(updated)
+      setActiveProg(newProg)
+      await loadSessions(newProg)
+      toast.success(`Block ${nextNum} created from ${prog.title}`)
+    } catch (e) {
+      toast.error('Failed to duplicate block')
+      console.error(e)
+    } finally {
+      setCreatingBlock(false)
+      setShowBlockDuplicateModal(false)
+      setBlockToDuplicate(null)
+    }
+  }
+
   async function deleteBlock(prog) {
     if (programmes.length <= 1) return toast.error('Must have at least one block')
     if (!window.confirm(`Delete ${prog.title}? This cannot be undone.`)) return
@@ -132,6 +186,30 @@ export default function ProgrammePage({ clientId: propClientId }) {
     }
     setSessions(created)
     setActiveTab(0)
+  }
+
+  async function duplicateSession(idx) {
+    const sess = sessions[idx]
+    const labels = ['A','B','C','D','E','F','G']
+    const newName = `${sess.name} (copy)`
+    const { data: newSess } = await supabase.from('programme_sessions')
+      .insert({ programme_id: activeProg.id, name: newName, position: sessions.length })
+      .select().single()
+
+    for (const ex of sess.exercises) {
+      await supabase.from('exercises').insert({
+        programme_session_id: newSess.id,
+        position: ex.position,
+        name: ex.name,
+        sets_reps: ex.sets_reps,
+        notes: ex.notes,
+        week_loads: ex.week_loads
+      })
+    }
+
+    await loadSessions(activeProg)
+    setActiveTab(sessions.length)
+    toast.success(`${sess.name} duplicated`)
   }
 
   const scheduleSave = useCallback((updatedSessions) => {
@@ -285,6 +363,31 @@ export default function ProgrammePage({ clientId: propClientId }) {
 
   return (
     <div style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+
+      {/* Block duplicate modal */}
+      {showBlockDuplicateModal && blockToDuplicate && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 50, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
+          <div style={{ background: 'var(--surface)', border: '0.5px solid var(--border2)', borderRadius: 16, padding: 24, width: '100%', maxWidth: 320 }}>
+            <h3 style={{ marginBottom: 8 }}>Duplicate {blockToDuplicate.title}</h3>
+            <div style={{ fontSize: 13, color: 'var(--text3)', marginBottom: 20 }}>
+              Copy with or without the week load values?
+            </div>
+            <button className="btn btn-primary btn-sm" style={{ marginBottom: 8 }}
+              onClick={() => duplicateBlock(blockToDuplicate, true)}>
+              Copy with loads
+            </button>
+            <button className="btn btn-ghost btn-sm" style={{ marginBottom: 8 }}
+              onClick={() => duplicateBlock(blockToDuplicate, false)}>
+              Copy without loads
+            </button>
+            <button className="btn btn-ghost btn-sm"
+              onClick={() => { setShowBlockDuplicateModal(false); setBlockToDuplicate(null) }}>
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
+
       <div className="page-header" style={{ paddingBottom: 8 }}>
         <div className="brand-label">HOSMAN</div>
         <div className="row">
@@ -309,6 +412,14 @@ export default function ProgrammePage({ clientId: propClientId }) {
               }}>
               {p.title.toUpperCase()}
             </button>
+            {isCoach && (
+              <button
+                onClick={() => { setBlockToDuplicate(p); setShowBlockDuplicateModal(true) }}
+                title="Duplicate block"
+                style={{ background: 'none', border: 'none', color: 'var(--text3)', cursor: 'pointer', fontSize: 11, padding: '0 2px', opacity: 0.5, lineHeight: 1 }}>
+                <i className="ti ti-copy" aria-hidden="true" />
+              </button>
+            )}
             {isCoach && programmes.length > 1 && (
               <button onClick={() => deleteBlock(p)}
                 style={{ background: 'none', border: 'none', color: 'var(--text3)', cursor: 'pointer', fontSize: 11, padding: '0 2px', opacity: 0.5, lineHeight: 1 }}>
@@ -352,6 +463,14 @@ export default function ProgrammePage({ clientId: propClientId }) {
                 : s.name
               }
             </button>
+            {isCoach && (
+              <button
+                onClick={() => duplicateSession(i)}
+                title="Duplicate session"
+                style={{ background: 'none', border: 'none', color: 'var(--text3)', cursor: 'pointer', fontSize: 11, padding: '0 2px', opacity: 0.5, lineHeight: 1 }}>
+                <i className="ti ti-copy" aria-hidden="true" />
+              </button>
+            )}
             {sessions.length > 1 && (
               <button onClick={() => deleteSession(i)} title="Delete session"
                 style={{ background: 'none', border: 'none', color: 'var(--text3)', cursor: 'pointer', fontSize: 12, padding: '0 6px 0 0', opacity: 0.5, lineHeight: 1 }}>
@@ -369,7 +488,7 @@ export default function ProgrammePage({ clientId: propClientId }) {
 
       <div style={{ fontSize: 10, color: 'var(--text3)', letterSpacing: '0.06em', padding: '6px 20px 4px', display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
         <i className="ti ti-pencil" style={{ fontSize: 11 }} aria-hidden="true" />
-        Tap any cell to edit · Use ▲▼ to reorder rows · Drag tabs to reorder sessions · Double-tap tab to rename · × to delete
+        Tap any cell to edit · Use ▲▼ to reorder rows · Drag tabs to reorder · Double-tap tab to rename · Copy icon to duplicate · × to delete
       </div>
 
       {/* Table */}
