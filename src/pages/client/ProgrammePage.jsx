@@ -14,6 +14,7 @@ export default function ProgrammePage({ clientId: propClientId }) {
   const [sessions, setSessions]     = useState([])
   const [activeTab, setActiveTab]   = useState(0)
   const [renaming, setRenaming]     = useState(null)
+  const [renamingBlock, setRenamingBlock] = useState(null)
   const [saving, setSaving]         = useState(false)
   const [loading, setLoading]       = useState(true)
   const [creatingBlock, setCreatingBlock] = useState(false)
@@ -111,6 +112,15 @@ export default function ProgrammePage({ clientId: propClientId }) {
     }
   }
 
+  async function renameBlock(prog, newTitle) {
+    if (!newTitle.trim()) return setRenamingBlock(null)
+    await supabase.from('programmes').update({ title: newTitle.trim() }).eq('id', prog.id)
+    setProgrammes(prev => prev.map(p => p.id === prog.id ? { ...p, title: newTitle.trim() } : p))
+    if (activeProg?.id === prog.id) setActiveProg(prev => ({ ...prev, title: newTitle.trim() }))
+    setRenamingBlock(null)
+    toast.success('Block renamed')
+  }
+
   async function duplicateBlock(prog, withLoads) {
     setCreatingBlock(true)
     try {
@@ -119,14 +129,12 @@ export default function ProgrammePage({ clientId: propClientId }) {
         .insert({ client_id: clientId, title: `Block ${nextNum}` })
         .select().single()
 
-      // Load sessions from source block
       const { data: sourceSessions } = await supabase
         .from('programme_sessions')
         .select('*, exercises(*)')
         .eq('programme_id', prog.id)
         .order('position')
 
-      // Duplicate each session and its exercises
       for (const sess of (sourceSessions || [])) {
         const { data: newSess } = await supabase.from('programme_sessions')
           .insert({ programme_id: newProg.id, name: sess.name, position: sess.position })
@@ -155,7 +163,6 @@ export default function ProgrammePage({ clientId: propClientId }) {
       toast.success(`Block ${nextNum} created from ${prog.title}`)
     } catch (e) {
       toast.error('Failed to duplicate block')
-      console.error(e)
     } finally {
       setCreatingBlock(false)
       setShowBlockDuplicateModal(false)
@@ -190,10 +197,8 @@ export default function ProgrammePage({ clientId: propClientId }) {
 
   async function duplicateSession(idx) {
     const sess = sessions[idx]
-    const labels = ['A','B','C','D','E','F','G']
-    const newName = `${sess.name} (copy)`
     const { data: newSess } = await supabase.from('programme_sessions')
-      .insert({ programme_id: activeProg.id, name: newName, position: sessions.length })
+      .insert({ programme_id: activeProg.id, name: `${sess.name} (copy)`, position: sessions.length })
       .select().single()
 
     for (const ex of sess.exercises) {
@@ -369,21 +374,10 @@ export default function ProgrammePage({ clientId: propClientId }) {
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 50, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
           <div style={{ background: 'var(--surface)', border: '0.5px solid var(--border2)', borderRadius: 16, padding: 24, width: '100%', maxWidth: 320 }}>
             <h3 style={{ marginBottom: 8 }}>Duplicate {blockToDuplicate.title}</h3>
-            <div style={{ fontSize: 13, color: 'var(--text3)', marginBottom: 20 }}>
-              Copy with or without the week load values?
-            </div>
-            <button className="btn btn-primary btn-sm" style={{ marginBottom: 8 }}
-              onClick={() => duplicateBlock(blockToDuplicate, true)}>
-              Copy with loads
-            </button>
-            <button className="btn btn-ghost btn-sm" style={{ marginBottom: 8 }}
-              onClick={() => duplicateBlock(blockToDuplicate, false)}>
-              Copy without loads
-            </button>
-            <button className="btn btn-ghost btn-sm"
-              onClick={() => { setShowBlockDuplicateModal(false); setBlockToDuplicate(null) }}>
-              Cancel
-            </button>
+            <div style={{ fontSize: 13, color: 'var(--text3)', marginBottom: 20 }}>Copy with or without the week load values?</div>
+            <button className="btn btn-primary btn-sm" style={{ marginBottom: 8 }} onClick={() => duplicateBlock(blockToDuplicate, true)}>Copy with loads</button>
+            <button className="btn btn-ghost btn-sm" style={{ marginBottom: 8 }} onClick={() => duplicateBlock(blockToDuplicate, false)}>Copy without loads</button>
+            <button className="btn btn-ghost btn-sm" onClick={() => { setShowBlockDuplicateModal(false); setBlockToDuplicate(null) }}>Cancel</button>
           </div>
         </div>
       )}
@@ -402,19 +396,30 @@ export default function ProgrammePage({ clientId: propClientId }) {
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '0 20px 10px', flexShrink: 0, overflowX: 'auto' }}>
         {programmes.map(p => (
           <div key={p.id} style={{ display: 'flex', alignItems: 'center', gap: 2, flexShrink: 0 }}>
-            <button onClick={() => switchBlock(p)}
-              style={{
-                padding: '5px 12px', borderRadius: 20, fontSize: 11, fontWeight: 600,
-                letterSpacing: '0.06em', cursor: 'pointer',
-                background: activeProg?.id === p.id ? 'var(--gold)' : 'var(--surface2)',
-                color: activeProg?.id === p.id ? '#1a1a1a' : 'var(--text3)',
-                border: 'none', fontFamily: 'Montserrat, sans-serif'
-              }}>
-              {p.title.toUpperCase()}
-            </button>
-            {isCoach && (
+            {renamingBlock === p.id ? (
+              <input
+                autoFocus
+                defaultValue={p.title}
+                onBlur={e => renameBlock(p, e.target.value)}
+                onKeyDown={e => { if (e.key === 'Enter') renameBlock(p, e.target.value); if (e.key === 'Escape') setRenamingBlock(null) }}
+                style={{ padding: '5px 12px', borderRadius: 20, fontSize: 11, fontWeight: 600, letterSpacing: '0.06em', fontFamily: 'Montserrat, sans-serif', background: 'var(--gold)', color: '#1a1a1a', border: 'none', outline: 'none', width: 100 }}
+              />
+            ) : (
               <button
-                onClick={() => { setBlockToDuplicate(p); setShowBlockDuplicateModal(true) }}
+                onClick={() => switchBlock(p)}
+                onDoubleClick={() => isCoach && setRenamingBlock(p.id)}
+                style={{
+                  padding: '5px 12px', borderRadius: 20, fontSize: 11, fontWeight: 600,
+                  letterSpacing: '0.06em', cursor: 'pointer',
+                  background: activeProg?.id === p.id ? 'var(--gold)' : 'var(--surface2)',
+                  color: activeProg?.id === p.id ? '#1a1a1a' : 'var(--text3)',
+                  border: 'none', fontFamily: 'Montserrat, sans-serif'
+                }}>
+                {p.title.toUpperCase()}
+              </button>
+            )}
+            {isCoach && (
+              <button onClick={() => { setBlockToDuplicate(p); setShowBlockDuplicateModal(true) }}
                 title="Duplicate block"
                 style={{ background: 'none', border: 'none', color: 'var(--text3)', cursor: 'pointer', fontSize: 11, padding: '0 2px', opacity: 0.5, lineHeight: 1 }}>
                 <i className="ti ti-copy" aria-hidden="true" />
@@ -464,9 +469,7 @@ export default function ProgrammePage({ clientId: propClientId }) {
               }
             </button>
             {isCoach && (
-              <button
-                onClick={() => duplicateSession(i)}
-                title="Duplicate session"
+              <button onClick={() => duplicateSession(i)} title="Duplicate session"
                 style={{ background: 'none', border: 'none', color: 'var(--text3)', cursor: 'pointer', fontSize: 11, padding: '0 2px', opacity: 0.5, lineHeight: 1 }}>
                 <i className="ti ti-copy" aria-hidden="true" />
               </button>
@@ -488,7 +491,7 @@ export default function ProgrammePage({ clientId: propClientId }) {
 
       <div style={{ fontSize: 10, color: 'var(--text3)', letterSpacing: '0.06em', padding: '6px 20px 4px', display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
         <i className="ti ti-pencil" style={{ fontSize: 11 }} aria-hidden="true" />
-        Tap any cell to edit · Use ▲▼ to reorder rows · Drag tabs to reorder · Double-tap tab to rename · Copy icon to duplicate · × to delete
+        Tap any cell to edit · Use ▲▼ to reorder rows · Drag tabs to reorder · Double-tap block or tab to rename · Copy icon to duplicate · × to delete
       </div>
 
       {/* Table */}
@@ -512,51 +515,31 @@ export default function ProgrammePage({ clientId: propClientId }) {
                 <tr key={ex.id}>
                   <td style={{ verticalAlign: 'middle', padding: '2px 4px' }}>
                     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1 }}>
-                      <button
-                        onClick={() => moveExercise(ei, -1)}
-                        disabled={ei === 0}
-                        style={{ background: 'none', border: 'none', color: ei === 0 ? 'transparent' : 'var(--text3)', cursor: ei === 0 ? 'default' : 'pointer', padding: '1px 4px', fontSize: 9, lineHeight: 1, opacity: ei === 0 ? 0 : 0.6 }}>
-                        ▲
-                      </button>
-                      <button
-                        onClick={() => moveExercise(ei, 1)}
-                        disabled={ei === curr.exercises.length - 1}
-                        style={{ background: 'none', border: 'none', color: ei === curr.exercises.length - 1 ? 'transparent' : 'var(--text3)', cursor: ei === curr.exercises.length - 1 ? 'default' : 'pointer', padding: '1px 4px', fontSize: 9, lineHeight: 1, opacity: ei === curr.exercises.length - 1 ? 0 : 0.6 }}>
-                        ▼
-                      </button>
+                      <button onClick={() => moveExercise(ei, -1)} disabled={ei === 0}
+                        style={{ background: 'none', border: 'none', color: ei === 0 ? 'transparent' : 'var(--text3)', cursor: ei === 0 ? 'default' : 'pointer', padding: '1px 4px', fontSize: 9, lineHeight: 1, opacity: ei === 0 ? 0 : 0.6 }}>▲</button>
+                      <button onClick={() => moveExercise(ei, 1)} disabled={ei === curr.exercises.length - 1}
+                        style={{ background: 'none', border: 'none', color: ei === curr.exercises.length - 1 ? 'transparent' : 'var(--text3)', cursor: ei === curr.exercises.length - 1 ? 'default' : 'pointer', padding: '1px 4px', fontSize: 9, lineHeight: 1, opacity: ei === curr.exercises.length - 1 ? 0 : 0.6 }}>▼</button>
                     </div>
                   </td>
                   <td>
-                    <textarea
-                      className="cell-input ex ex-name-input"
-                      value={ex.name}
-                      placeholder="Exercise name"
-                      rows={1}
+                    <textarea className="cell-input ex ex-name-input" value={ex.name} placeholder="Exercise name" rows={1}
                       onChange={e => { onCellChange(ei, 'name', e.target.value); autoResize(e) }}
                       onFocus={autoResize}
-                      style={{ resize: 'none', overflow: 'hidden', lineHeight: '1.5', display: 'block', width: '100%', minHeight: '20px' }}
-                    />
+                      style={{ resize: 'none', overflow: 'hidden', lineHeight: '1.5', display: 'block', width: '100%', minHeight: '20px' }} />
                   </td>
                   <td>
-                    <input className="cell-input"
-                      value={ex.sets_reps} placeholder="e.g. 3×8"
+                    <input className="cell-input" value={ex.sets_reps} placeholder="e.g. 3×8"
                       onChange={e => onCellChange(ei, 'sets_reps', e.target.value)} />
                   </td>
                   <td>
-                    <textarea
-                      className="cell-input"
-                      value={ex.notes}
-                      placeholder="—"
-                      rows={1}
+                    <textarea className="cell-input" value={ex.notes} placeholder="—" rows={1}
                       onChange={e => { onCellChange(ei, 'notes', e.target.value); autoResize(e) }}
                       onFocus={autoResize}
-                      style={{ resize: 'none', overflow: 'hidden', lineHeight: '1.5', display: 'block', width: '100%', minHeight: '20px' }}
-                    />
+                      style={{ resize: 'none', overflow: 'hidden', lineHeight: '1.5', display: 'block', width: '100%', minHeight: '20px' }} />
                   </td>
                   {Array.from({ length: WEEK_COUNT }, (_, wi) => (
                     <td key={wi}>
-                      <input className="cell-input"
-                        value={ex.week_loads[wi] || ''} placeholder="—"
+                      <input className="cell-input" value={ex.week_loads[wi] || ''} placeholder="—"
                         onChange={e => onWeekChange(ei, wi, e.target.value)} />
                     </td>
                   ))}
