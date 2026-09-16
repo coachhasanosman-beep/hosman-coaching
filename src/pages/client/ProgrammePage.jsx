@@ -9,22 +9,29 @@ export default function ProgrammePage({ clientId: propClientId }) {
   const { profile, isCoach } = useAuth()
   const clientId = propClientId || profile?.id
 
-  const [programmes, setProgrammes] = useState([])
-  const [activeProg, setActiveProg] = useState(null)
-  const [sessions, setSessions]     = useState([])
-  const [activeTab, setActiveTab]   = useState(0)
-  const [renaming, setRenaming]     = useState(null)
+  const [macrocycles, setMacrocycles]   = useState([])
+  const [activeMacro, setActiveMacro]   = useState(null)
+  const [showMacroForm, setShowMacroForm] = useState(false)
+  const [macroForm, setMacroForm]       = useState({ title: '', goal: '', notes: '' })
+  const [editingMacro, setEditingMacro] = useState(null)
+
+  const [programmes, setProgrammes]     = useState([])
+  const [activeProg, setActiveProg]     = useState(null)
+  const [sessions, setSessions]         = useState([])
+  const [activeTab, setActiveTab]       = useState(0)
+  const [renaming, setRenaming]         = useState(null)
   const [renamingBlock, setRenamingBlock] = useState(null)
-  const [saving, setSaving]         = useState(false)
-  const [loading, setLoading]       = useState(true)
+  const [saving, setSaving]             = useState(false)
+  const [loading, setLoading]           = useState(true)
   const [creatingBlock, setCreatingBlock] = useState(false)
   const [showBlockDuplicateModal, setShowBlockDuplicateModal] = useState(false)
   const [blockToDuplicate, setBlockToDuplicate] = useState(null)
+
   const saveTimer = useRef(null)
   const dragSrc   = useRef(null)
   const tableRef  = useRef(null)
 
-  useEffect(() => { if (clientId) loadProgrammes() }, [clientId])
+  useEffect(() => { if (clientId) loadMacrocycles() }, [clientId])
 
   useEffect(() => {
     const resize = () => {
@@ -40,17 +47,41 @@ export default function ProgrammePage({ clientId: propClientId }) {
     setTimeout(resize, 500)
   }, [sessions, activeTab])
 
-  async function loadProgrammes() {
+  async function loadMacrocycles() {
     setLoading(true)
-    const { data: progs } = await supabase
-      .from('programmes')
+    const { data: macros } = await supabase
+      .from('macrocycles')
       .select('*')
       .eq('client_id', clientId)
       .order('created_at', { ascending: true })
 
+    if (!macros || macros.length === 0) {
+      const { data } = await supabase.from('macrocycles')
+        .insert({ client_id: clientId, title: 'Macrocycle 1', goal: '' })
+        .select().single()
+      setMacrocycles([data])
+      setActiveMacro(data)
+      await loadProgrammes(data)
+    } else {
+      setMacrocycles(macros)
+      const latest = macros[macros.length - 1]
+      setActiveMacro(latest)
+      await loadProgrammes(latest)
+    }
+    setLoading(false)
+  }
+
+  async function loadProgrammes(macro) {
+    const { data: progs } = await supabase
+      .from('programmes')
+      .select('*')
+      .eq('client_id', clientId)
+      .eq('macrocycle_id', macro.id)
+      .order('created_at', { ascending: true })
+
     if (!progs || progs.length === 0) {
       const { data } = await supabase.from('programmes')
-        .insert({ client_id: clientId, title: 'Block 1' })
+        .insert({ client_id: clientId, title: 'Block 1', macrocycle_id: macro.id })
         .select().single()
       setProgrammes([data])
       setActiveProg(data)
@@ -61,7 +92,6 @@ export default function ProgrammePage({ clientId: propClientId }) {
       setActiveProg(latest)
       await loadSessions(latest)
     }
-    setLoading(false)
   }
 
   async function loadSessions(prog) {
@@ -86,6 +116,60 @@ export default function ProgrammePage({ clientId: propClientId }) {
     }
   }
 
+  async function switchMacro(macro) {
+    setActiveMacro(macro)
+    setProgrammes([])
+    setSessions([])
+    setActiveTab(0)
+    await loadProgrammes(macro)
+  }
+
+  async function createMacrocycle() {
+    if (!macroForm.title.trim()) return toast.error('Name required')
+    try {
+      const { data } = await supabase.from('macrocycles')
+        .insert({ client_id: clientId, title: macroForm.title.trim(), goal: macroForm.goal, notes: macroForm.notes })
+        .select().single()
+      const updated = [...macrocycles, data]
+      setMacrocycles(updated)
+      setActiveMacro(data)
+      setShowMacroForm(false)
+      setMacroForm({ title: '', goal: '', notes: '' })
+      await loadProgrammes(data)
+      toast.success(`${data.title} created`)
+    } catch (e) {
+      toast.error('Failed to create macrocycle')
+    }
+  }
+
+  async function updateMacrocycle() {
+    if (!macroForm.title.trim()) return toast.error('Name required')
+    try {
+      await supabase.from('macrocycles').update({
+        title: macroForm.title.trim(), goal: macroForm.goal, notes: macroForm.notes
+      }).eq('id', editingMacro.id)
+      setMacrocycles(prev => prev.map(m => m.id === editingMacro.id ? { ...m, ...macroForm } : m))
+      if (activeMacro?.id === editingMacro.id) setActiveMacro(prev => ({ ...prev, ...macroForm }))
+      setEditingMacro(null)
+      setMacroForm({ title: '', goal: '', notes: '' })
+      toast.success('Macrocycle updated')
+    } catch (e) {
+      toast.error('Failed to update')
+    }
+  }
+
+  async function deleteMacrocycle(macro) {
+    if (macrocycles.length <= 1) return toast.error('Must have at least one macrocycle')
+    if (!window.confirm(`Delete ${macro.title} and all its blocks? This cannot be undone.`)) return
+    await supabase.from('macrocycles').delete().eq('id', macro.id)
+    const updated = macrocycles.filter(m => m.id !== macro.id)
+    setMacrocycles(updated)
+    const latest = updated[updated.length - 1]
+    setActiveMacro(latest)
+    await loadProgrammes(latest)
+    toast.success(`${macro.title} deleted`)
+  }
+
   async function switchBlock(prog) {
     setActiveProg(prog)
     setSessions([])
@@ -98,7 +182,7 @@ export default function ProgrammePage({ clientId: propClientId }) {
     try {
       const nextNum = programmes.length + 1
       const { data } = await supabase.from('programmes')
-        .insert({ client_id: clientId, title: `Block ${nextNum}` })
+        .insert({ client_id: clientId, title: `Block ${nextNum}`, macrocycle_id: activeMacro.id })
         .select().single()
       const updated = [...programmes, data]
       setProgrammes(updated)
@@ -126,7 +210,7 @@ export default function ProgrammePage({ clientId: propClientId }) {
     try {
       const nextNum = programmes.length + 1
       const { data: newProg } = await supabase.from('programmes')
-        .insert({ client_id: clientId, title: `Block ${nextNum}` })
+        .insert({ client_id: clientId, title: `Block ${nextNum}`, macrocycle_id: activeMacro.id })
         .select().single()
 
       const { data: sourceSessions } = await supabase
@@ -140,8 +224,7 @@ export default function ProgrammePage({ clientId: propClientId }) {
           .insert({ programme_id: newProg.id, name: sess.name, position: sess.position })
           .select().single()
 
-        const exercises = (sess.exercises || []).sort((a, b) => a.position - b.position)
-        for (const ex of exercises) {
+        for (const ex of (sess.exercises || []).sort((a, b) => a.position - b.position)) {
           const weekLoads = withLoads
             ? (Array.isArray(ex.week_loads) ? ex.week_loads : JSON.parse(ex.week_loads || '[]'))
             : ['', '', '', '', '', '']
@@ -200,18 +283,13 @@ export default function ProgrammePage({ clientId: propClientId }) {
     const { data: newSess } = await supabase.from('programme_sessions')
       .insert({ programme_id: activeProg.id, name: `${sess.name} (copy)`, position: sessions.length })
       .select().single()
-
     for (const ex of sess.exercises) {
       await supabase.from('exercises').insert({
         programme_session_id: newSess.id,
-        position: ex.position,
-        name: ex.name,
-        sets_reps: ex.sets_reps,
-        notes: ex.notes,
-        week_loads: ex.week_loads
+        position: ex.position, name: ex.name,
+        sets_reps: ex.sets_reps, notes: ex.notes, week_loads: ex.week_loads
       })
     }
-
     await loadSessions(activeProg)
     setActiveTab(sessions.length)
     toast.success(`${sess.name} duplicated`)
@@ -228,13 +306,9 @@ export default function ProgrammePage({ clientId: propClientId }) {
       for (const s of sess) {
         for (const ex of s.exercises) {
           await supabase.from('exercises').upsert({
-            id: ex.id,
-            programme_session_id: s.id,
-            position: ex.position,
-            name: ex.name,
-            sets_reps: ex.sets_reps,
-            notes: ex.notes,
-            week_loads: ex.week_loads
+            id: ex.id, programme_session_id: s.id,
+            position: ex.position, name: ex.name,
+            sets_reps: ex.sets_reps, notes: ex.notes, week_loads: ex.week_loads
           })
         }
         await supabase.from('programme_sessions').update({ name: s.name }).eq('id', s.id)
@@ -291,10 +365,8 @@ export default function ProgrammePage({ clientId: propClientId }) {
   async function addExercise() {
     const sess = sessions[activeTab]
     const { data } = await supabase.from('exercises').insert({
-      programme_session_id: sess.id,
-      position: sess.exercises.length,
-      name: '', sets_reps: '', notes: '',
-      week_loads: ['', '', '', '', '', '']
+      programme_session_id: sess.id, position: sess.exercises.length,
+      name: '', sets_reps: '', notes: '', week_loads: ['', '', '', '', '', '']
     }).select().single()
     updateSession(prev => prev.map((s, si) => si !== activeTab ? s : {
       ...s, exercises: [...s.exercises, { ...data, week_loads: ['', '', '', '', '', ''] }]
@@ -340,19 +412,16 @@ export default function ProgrammePage({ clientId: propClientId }) {
   }
 
   function onTabDragStart(idx) { dragSrc.current = `tab-${idx}` }
-
   async function onTabDrop(targetIdx) {
     if (!dragSrc.current?.startsWith('tab-')) return
     const fromIdx = parseInt(dragSrc.current.split('-')[1])
     if (fromIdx === targetIdx) return
     dragSrc.current = null
-
     const updated = [...sessions]
     const [moved] = updated.splice(fromIdx, 1)
     updated.splice(targetIdx, 0, moved)
     setSessions(updated)
     setActiveTab(targetIdx)
-
     for (let i = 0; i < updated.length; i++) {
       await supabase.from('programme_sessions').update({ position: i }).eq('id', updated[i].id)
     }
@@ -382,6 +451,38 @@ export default function ProgrammePage({ clientId: propClientId }) {
         </div>
       )}
 
+      {/* Macrocycle edit modal */}
+      {(showMacroForm || editingMacro) && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 50, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
+          <div style={{ background: 'var(--surface)', border: '0.5px solid var(--border2)', borderRadius: 16, padding: 24, width: '100%', maxWidth: 360 }}>
+            <h3 style={{ marginBottom: 16 }}>{editingMacro ? 'Edit macrocycle' : 'New macrocycle'}</h3>
+            <div style={{ marginBottom: 10 }}>
+              <label className="input-label">Name</label>
+              <input className="input" placeholder="e.g. Hypertrophy Phase" value={macroForm.title}
+                onChange={e => setMacroForm(f => ({ ...f, title: e.target.value }))} />
+            </div>
+            <div style={{ marginBottom: 10 }}>
+              <label className="input-label">Goal (optional)</label>
+              <input className="input" placeholder="e.g. Build muscle mass" value={macroForm.goal}
+                onChange={e => setMacroForm(f => ({ ...f, goal: e.target.value }))} />
+            </div>
+            <div style={{ marginBottom: 16 }}>
+              <label className="input-label">Notes (optional)</label>
+              <textarea className="input" rows={3} placeholder="Any additional notes…" value={macroForm.notes}
+                onChange={e => setMacroForm(f => ({ ...f, notes: e.target.value }))}
+                style={{ resize: 'vertical' }} />
+            </div>
+            <button className="btn btn-primary btn-sm" style={{ marginBottom: 8 }}
+              onClick={editingMacro ? updateMacrocycle : createMacrocycle}>
+              {editingMacro ? 'Save changes' : 'Create macrocycle'}
+            </button>
+            <button className="btn btn-ghost btn-sm" onClick={() => { setShowMacroForm(false); setEditingMacro(null); setMacroForm({ title: '', goal: '', notes: '' }) }}>
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
+
       <div className="page-header" style={{ paddingBottom: 8 }}>
         <div className="brand-label">HOSMAN</div>
         <div className="row">
@@ -392,22 +493,66 @@ export default function ProgrammePage({ clientId: propClientId }) {
         </div>
       </div>
 
+      {/* Macrocycle selector */}
+      <div style={{ padding: '0 20px 8px', flexShrink: 0 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6 }}>
+          <span style={{ fontSize: 10, color: 'var(--text3)', letterSpacing: '0.08em', fontWeight: 600 }}>MACROCYCLE</span>
+          {isCoach && (
+            <button onClick={() => { setShowMacroForm(true); setMacroForm({ title: '', goal: '', notes: '' }) }}
+              style={{ background: 'none', border: 'none', color: 'var(--text3)', cursor: 'pointer', fontSize: 11, padding: '0 4px', opacity: 0.6 }}>
+              <i className="ti ti-plus" /> New
+            </button>
+          )}
+        </div>
+        <div style={{ display: 'flex', gap: 6, overflowX: 'auto', flexWrap: 'nowrap' }}>
+          {macrocycles.map(m => (
+            <div key={m.id} style={{ display: 'flex', alignItems: 'center', gap: 2, flexShrink: 0 }}>
+              <button onClick={() => switchMacro(m)}
+                style={{
+                  padding: '5px 12px', borderRadius: 20, fontSize: 11, fontWeight: 600,
+                  letterSpacing: '0.06em', cursor: 'pointer',
+                  background: activeMacro?.id === m.id ? 'var(--surface3)' : 'var(--surface2)',
+                  color: activeMacro?.id === m.id ? 'var(--text)' : 'var(--text3)',
+                  border: activeMacro?.id === m.id ? '0.5px solid var(--border2)' : 'none',
+                  fontFamily: 'Montserrat, sans-serif'
+                }}>
+                {m.title.toUpperCase()}
+              </button>
+              {isCoach && (
+                <>
+                  <button onClick={() => { setEditingMacro(m); setMacroForm({ title: m.title, goal: m.goal || '', notes: m.notes || '' }) }}
+                    title="Edit macrocycle"
+                    style={{ background: 'none', border: 'none', color: 'var(--text3)', cursor: 'pointer', fontSize: 11, padding: '0 2px', opacity: 0.5 }}>
+                    <i className="ti ti-pencil" />
+                  </button>
+                  {macrocycles.length > 1 && (
+                    <button onClick={() => deleteMacrocycle(m)}
+                      style={{ background: 'none', border: 'none', color: 'var(--text3)', cursor: 'pointer', fontSize: 11, padding: '0 2px', opacity: 0.5 }}>
+                      <i className="ti ti-x" />
+                    </button>
+                  )}
+                </>
+              )}
+            </div>
+          ))}
+        </div>
+        {activeMacro?.goal && (
+          <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 4 }}>Goal: {activeMacro.goal}</div>
+        )}
+      </div>
+
       {/* Block selector */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '0 20px 10px', flexShrink: 0, overflowX: 'auto' }}>
+        <span style={{ fontSize: 10, color: 'var(--text3)', letterSpacing: '0.08em', fontWeight: 600, flexShrink: 0 }}>BLOCK</span>
         {programmes.map(p => (
           <div key={p.id} style={{ display: 'flex', alignItems: 'center', gap: 2, flexShrink: 0 }}>
             {renamingBlock === p.id ? (
-              <input
-                autoFocus
-                defaultValue={p.title}
+              <input autoFocus defaultValue={p.title}
                 onBlur={e => renameBlock(p, e.target.value)}
                 onKeyDown={e => { if (e.key === 'Enter') renameBlock(p, e.target.value); if (e.key === 'Escape') setRenamingBlock(null) }}
-                style={{ padding: '5px 12px', borderRadius: 20, fontSize: 11, fontWeight: 600, letterSpacing: '0.06em', fontFamily: 'Montserrat, sans-serif', background: 'var(--gold)', color: '#1a1a1a', border: 'none', outline: 'none', width: 100 }}
-              />
+                style={{ padding: '5px 12px', borderRadius: 20, fontSize: 11, fontWeight: 600, letterSpacing: '0.06em', fontFamily: 'Montserrat, sans-serif', background: 'var(--gold)', color: '#1a1a1a', border: 'none', outline: 'none', width: 100 }} />
             ) : (
-              <button
-                onClick={() => switchBlock(p)}
-                onDoubleClick={() => isCoach && setRenamingBlock(p.id)}
+              <button onClick={() => switchBlock(p)} onDoubleClick={() => isCoach && setRenamingBlock(p.id)}
                 style={{
                   padding: '5px 12px', borderRadius: 20, fontSize: 11, fontWeight: 600,
                   letterSpacing: '0.06em', cursor: 'pointer',
@@ -421,14 +566,14 @@ export default function ProgrammePage({ clientId: propClientId }) {
             {isCoach && (
               <button onClick={() => { setBlockToDuplicate(p); setShowBlockDuplicateModal(true) }}
                 title="Duplicate block"
-                style={{ background: 'none', border: 'none', color: 'var(--text3)', cursor: 'pointer', fontSize: 11, padding: '0 2px', opacity: 0.5, lineHeight: 1 }}>
-                <i className="ti ti-copy" aria-hidden="true" />
+                style={{ background: 'none', border: 'none', color: 'var(--text3)', cursor: 'pointer', fontSize: 11, padding: '0 2px', opacity: 0.5 }}>
+                <i className="ti ti-copy" />
               </button>
             )}
             {isCoach && programmes.length > 1 && (
               <button onClick={() => deleteBlock(p)}
-                style={{ background: 'none', border: 'none', color: 'var(--text3)', cursor: 'pointer', fontSize: 11, padding: '0 2px', opacity: 0.5, lineHeight: 1 }}>
-                <i className="ti ti-x" aria-hidden="true" />
+                style={{ background: 'none', border: 'none', color: 'var(--text3)', cursor: 'pointer', fontSize: 11, padding: '0 2px', opacity: 0.5 }}>
+                <i className="ti ti-x" />
               </button>
             )}
           </div>
@@ -450,48 +595,42 @@ export default function ProgrammePage({ clientId: propClientId }) {
       {/* Session tabs */}
       <div className="tab-bar" onDragOver={e => e.preventDefault()}>
         {sessions.map((s, i) => (
-          <div key={s.id}
-            style={{ display: 'flex', alignItems: 'center', flexShrink: 0, cursor: 'grab' }}
-            draggable
-            onDragStart={() => onTabDragStart(i)}
+          <div key={s.id} style={{ display: 'flex', alignItems: 'center', flexShrink: 0, cursor: 'grab' }}
+            draggable onDragStart={() => onTabDragStart(i)}
             onDrop={e => { e.preventDefault(); onTabDrop(i) }}>
-            <button
-              className={`tab-btn ${i === activeTab ? 'active' : ''}`}
-              onClick={() => setActiveTab(i)}
-              onDoubleClick={() => startRename(i)}>
+            <button className={`tab-btn ${i === activeTab ? 'active' : ''}`}
+              onClick={() => setActiveTab(i)} onDoubleClick={() => startRename(i)}>
               {renaming === i
-                ? <input autoFocus className="tab-rename"
-                    defaultValue={s.name}
+                ? <input autoFocus className="tab-rename" defaultValue={s.name}
                     onBlur={e => finishRename(i, e.target.value)}
                     onKeyDown={e => { if (e.key === 'Enter') finishRename(i, e.target.value) }}
                     onClick={e => e.stopPropagation()} />
-                : s.name
-              }
+                : s.name}
             </button>
             {isCoach && (
               <button onClick={() => duplicateSession(i)} title="Duplicate session"
-                style={{ background: 'none', border: 'none', color: 'var(--text3)', cursor: 'pointer', fontSize: 11, padding: '0 2px', opacity: 0.5, lineHeight: 1 }}>
-                <i className="ti ti-copy" aria-hidden="true" />
+                style={{ background: 'none', border: 'none', color: 'var(--text3)', cursor: 'pointer', fontSize: 11, padding: '0 2px', opacity: 0.5 }}>
+                <i className="ti ti-copy" />
               </button>
             )}
             {sessions.length > 1 && (
-              <button onClick={() => deleteSession(i)} title="Delete session"
-                style={{ background: 'none', border: 'none', color: 'var(--text3)', cursor: 'pointer', fontSize: 12, padding: '0 6px 0 0', opacity: 0.5, lineHeight: 1 }}>
-                <i className="ti ti-x" aria-hidden="true" />
+              <button onClick={() => deleteSession(i)}
+                style={{ background: 'none', border: 'none', color: 'var(--text3)', cursor: 'pointer', fontSize: 12, padding: '0 6px 0 0', opacity: 0.5 }}>
+                <i className="ti ti-x" />
               </button>
             )}
           </div>
         ))}
         {sessions.length < 7 && (
-          <button className="tab-btn" onClick={addSession} title="Add session" style={{ padding: '10px 8px' }}>
-            <i className="ti ti-plus" style={{ fontSize: 16 }} aria-hidden="true" />
+          <button className="tab-btn" onClick={addSession} style={{ padding: '10px 8px' }}>
+            <i className="ti ti-plus" style={{ fontSize: 16 }} />
           </button>
         )}
       </div>
 
       <div style={{ fontSize: 10, color: 'var(--text3)', letterSpacing: '0.06em', padding: '6px 20px 4px', display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
-        <i className="ti ti-pencil" style={{ fontSize: 11 }} aria-hidden="true" />
-        Tap any cell to edit · Use ▲▼ to reorder rows · Drag tabs to reorder · Double-tap block or tab to rename · Copy icon to duplicate · × to delete
+        <i className="ti ti-pencil" style={{ fontSize: 11 }} />
+        Tap any cell to edit · Use ▲▼ to reorder rows · Drag tabs to reorder · Double-tap block to rename · Copy to duplicate · × to delete
       </div>
 
       {/* Table */}
@@ -544,8 +683,8 @@ export default function ProgrammePage({ clientId: propClientId }) {
                     </td>
                   ))}
                   <td style={{ verticalAlign: 'top', paddingTop: 10 }}>
-                    <button className="delete-row-btn" onClick={() => deleteExercise(ei)} title="Remove exercise">
-                      <i className="ti ti-x" aria-hidden="true" />
+                    <button className="delete-row-btn" onClick={() => deleteExercise(ei)}>
+                      <i className="ti ti-x" />
                     </button>
                   </td>
                 </tr>
@@ -559,7 +698,7 @@ export default function ProgrammePage({ clientId: propClientId }) {
             cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6,
             margin: '10px 0', fontFamily: 'Montserrat, sans-serif', width: '100%'
           }}>
-            <i className="ti ti-plus" style={{ fontSize: 14 }} aria-hidden="true" /> Add exercise
+            <i className="ti ti-plus" style={{ fontSize: 14 }} /> Add exercise
           </button>
           <div style={{ height: 20 }} />
         </div>
