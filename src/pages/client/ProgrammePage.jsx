@@ -9,23 +9,24 @@ export default function ProgrammePage({ clientId: propClientId }) {
   const { profile, isCoach } = useAuth()
   const clientId = propClientId || profile?.id
 
-  const [macrocycles, setMacrocycles]   = useState([])
-  const [activeMacro, setActiveMacro]   = useState(null)
-  const [showMacroForm, setShowMacroForm] = useState(false)
-  const [macroForm, setMacroForm]       = useState({ title: '', goal: '', notes: '' })
-  const [editingMacro, setEditingMacro] = useState(null)
+  const [macrocycles, setMacrocycles]         = useState([])
+  const [activeMacro, setActiveMacro]         = useState(null)
+  const [showMacroForm, setShowMacroForm]     = useState(false)
+  const [macroForm, setMacroForm]             = useState({ title: '', goal: '', notes: '' })
+  const [editingMacro, setEditingMacro]       = useState(null)
 
-  const [programmes, setProgrammes]     = useState([])
-  const [activeProg, setActiveProg]     = useState(null)
-  const [sessions, setSessions]         = useState([])
-  const [activeTab, setActiveTab]       = useState(0)
-  const [renaming, setRenaming]         = useState(null)
-  const [renamingBlock, setRenamingBlock] = useState(null)
-  const [saving, setSaving]             = useState(false)
-  const [loading, setLoading]           = useState(true)
-  const [creatingBlock, setCreatingBlock] = useState(false)
+  const [programmes, setProgrammes]           = useState([])
+  const [activeProg, setActiveProg]           = useState(null)
+  const [sessions, setSessions]               = useState([])
+  const [activeTab, setActiveTab]             = useState(0)
+  const [renaming, setRenaming]               = useState(null)
+  const [renamingBlock, setRenamingBlock]     = useState(null)
+  const [saving, setSaving]                   = useState(false)
+  const [loading, setLoading]                 = useState(true)
+  const [creatingBlock, setCreatingBlock]     = useState(false)
   const [showBlockDuplicateModal, setShowBlockDuplicateModal] = useState(false)
-  const [blockToDuplicate, setBlockToDuplicate] = useState(null)
+  const [blockToDuplicate, setBlockToDuplicate]               = useState(null)
+  const [duplicateTargetMacro, setDuplicateTargetMacro]       = useState('')
 
   const saveTimer = useRef(null)
   const dragSrc   = useRef(null)
@@ -205,18 +206,28 @@ export default function ProgrammePage({ clientId: propClientId }) {
     toast.success('Block renamed')
   }
 
-  async function duplicateBlock(prog, withLoads) {
+  async function duplicateBlock(withLoads) {
+    if (!blockToDuplicate) return
     setCreatingBlock(true)
     try {
-      const nextNum = programmes.length + 1
+      const targetMacroId = duplicateTargetMacro || activeMacro.id
+
+      const { data: targetBlocks } = await supabase
+        .from('programmes')
+        .select('id')
+        .eq('client_id', clientId)
+        .eq('macrocycle_id', targetMacroId)
+
+      const nextNum = (targetBlocks?.length || 0) + 1
+
       const { data: newProg } = await supabase.from('programmes')
-        .insert({ client_id: clientId, title: `Block ${nextNum}`, macrocycle_id: activeMacro.id })
+        .insert({ client_id: clientId, title: `Block ${nextNum}`, macrocycle_id: targetMacroId })
         .select().single()
 
       const { data: sourceSessions } = await supabase
         .from('programme_sessions')
         .select('*, exercises(*)')
-        .eq('programme_id', prog.id)
+        .eq('programme_id', blockToDuplicate.id)
         .order('position')
 
       for (const sess of (sourceSessions || [])) {
@@ -230,22 +241,24 @@ export default function ProgrammePage({ clientId: propClientId }) {
             : ['', '', '', '', '', '']
           await supabase.from('exercises').insert({
             programme_session_id: newSess.id,
-            position: ex.position,
-            name: ex.name,
-            sets_reps: ex.sets_reps,
-            notes: ex.notes,
-            week_loads: weekLoads
+            position: ex.position, name: ex.name,
+            sets_reps: ex.sets_reps, notes: ex.notes, week_loads: weekLoads
           })
         }
       }
 
-      const updated = [...programmes, newProg]
-      setProgrammes(updated)
-      setActiveProg(newProg)
-      await loadSessions(newProg)
-      toast.success(`Block ${nextNum} created from ${prog.title}`)
+      // If duplicating into current macrocycle, refresh
+      if (targetMacroId === activeMacro.id) {
+        const updated = [...programmes, newProg]
+        setProgrammes(updated)
+        setActiveProg(newProg)
+        await loadSessions(newProg)
+      }
+
+      toast.success(`Block duplicated into ${macrocycles.find(m => m.id === targetMacroId)?.title || 'macrocycle'}`)
     } catch (e) {
       toast.error('Failed to duplicate block')
+      console.error(e)
     } finally {
       setCreatingBlock(false)
       setShowBlockDuplicateModal(false)
@@ -443,15 +456,21 @@ export default function ProgrammePage({ clientId: propClientId }) {
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 50, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
           <div style={{ background: 'var(--surface)', border: '0.5px solid var(--border2)', borderRadius: 16, padding: 24, width: '100%', maxWidth: 320 }}>
             <h3 style={{ marginBottom: 8 }}>Duplicate {blockToDuplicate.title}</h3>
-            <div style={{ fontSize: 13, color: 'var(--text3)', marginBottom: 20 }}>Copy with or without the week load values?</div>
-            <button className="btn btn-primary btn-sm" style={{ marginBottom: 8 }} onClick={() => duplicateBlock(blockToDuplicate, true)}>Copy with loads</button>
-            <button className="btn btn-ghost btn-sm" style={{ marginBottom: 8 }} onClick={() => duplicateBlock(blockToDuplicate, false)}>Copy without loads</button>
+            <div style={{ marginBottom: 16 }}>
+              <label className="input-label">Destination macrocycle</label>
+              <select className="input" value={duplicateTargetMacro} onChange={e => setDuplicateTargetMacro(e.target.value)} style={{ fontSize: 12 }}>
+                {macrocycles.map(m => <option key={m.id} value={m.id}>{m.title}</option>)}
+              </select>
+            </div>
+            <div style={{ fontSize: 13, color: 'var(--text3)', marginBottom: 12 }}>Copy week load values?</div>
+            <button className="btn btn-primary btn-sm" style={{ marginBottom: 8 }} onClick={() => duplicateBlock(true)}>Copy with loads</button>
+            <button className="btn btn-ghost btn-sm" style={{ marginBottom: 8 }} onClick={() => duplicateBlock(false)}>Copy without loads</button>
             <button className="btn btn-ghost btn-sm" onClick={() => { setShowBlockDuplicateModal(false); setBlockToDuplicate(null) }}>Cancel</button>
           </div>
         </div>
       )}
 
-      {/* Macrocycle edit modal */}
+      {/* Macrocycle form modal */}
       {(showMacroForm || editingMacro) && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 50, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
           <div style={{ background: 'var(--surface)', border: '0.5px solid var(--border2)', borderRadius: 16, padding: 24, width: '100%', maxWidth: 360 }}>
@@ -564,7 +583,7 @@ export default function ProgrammePage({ clientId: propClientId }) {
               </button>
             )}
             {isCoach && (
-              <button onClick={() => { setBlockToDuplicate(p); setShowBlockDuplicateModal(true) }}
+              <button onClick={() => { setBlockToDuplicate(p); setDuplicateTargetMacro(activeMacro.id); setShowBlockDuplicateModal(true) }}
                 title="Duplicate block"
                 style={{ background: 'none', border: 'none', color: 'var(--text3)', cursor: 'pointer', fontSize: 11, padding: '0 2px', opacity: 0.5 }}>
                 <i className="ti ti-copy" />
