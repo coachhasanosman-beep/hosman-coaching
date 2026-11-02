@@ -55,6 +55,7 @@ create table exercises (
   name                 text not null default '',
   sets_reps            text default '',
   notes                text default '',
+  superset_group       text,
   -- Week loads stored as JSON array of 6 strings
   week_loads           jsonb default '["","","","","",""]'
 );

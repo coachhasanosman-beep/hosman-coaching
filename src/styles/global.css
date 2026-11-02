@@ -249,14 +249,12 @@ h3 { font-size: 15px; font-weight: 500; color: var(--text); }
     color: #fff !important;
   }
 
-  body * { visibility: hidden !important; }
-  .programme-print, .programme-print * { visibility: visible !important; }
+  body > *:not(.programme-print) { display: none !important; }
   .programme-print {
     display: block !important;
-    position: absolute;
-    inset: 0;
+    position: static !important;
     width: 100%;
-    min-height: 100vh;
+    min-height: 0;
     padding: 14mm;
     background: #141414 !important;
     color: #fff !important;
@@ -287,14 +285,17 @@ h3 { font-size: 15px; font-weight: 500; color: var(--text); }
   }
 
   .programme-print-header p { color: #C9A84C; font-size: 11pt; margin: 0; }
-  .programme-print-session { margin-bottom: 9mm; break-inside: avoid; }
+  .programme-print-session { margin-bottom: 9mm; break-inside: auto; }
   .programme-print-session h2 {
     color: #C9A84C;
     font: 600 12pt Arial, Helvetica, sans-serif;
     margin: 0 0 3mm;
+    break-after: avoid-page;
+    page-break-after: avoid;
   }
 
   .programme-print table { width: 100%; border-collapse: collapse; table-layout: fixed; }
+  .programme-print thead { display: table-header-group; }
   .programme-print th, .programme-print td {
     border-bottom: 1px solid #3c3c3c;
     color: #fff;
@@ -307,7 +308,7 @@ h3 { font-size: 15px; font-weight: 500; color: var(--text); }
   .programme-print th { color: #C9A84C; font-size: 8pt; font-weight: 600; }
   .programme-print td { font-size: 8.5pt; }
   .programme-print-gap td { height: 3mm; border-bottom: 1px solid #C9A84C; padding: 0; }
-  .programme-print tr { break-inside: avoid; }
+  .programme-print tr { break-inside: avoid; page-break-inside: avoid; }
 }
 
 /* ── Schedule ─── */

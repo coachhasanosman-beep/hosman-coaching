@@ -1,9 +1,34 @@
 import { useEffect, useState, useRef, useCallback } from 'react'
+import { createPortal } from 'react-dom'
 import toast from 'react-hot-toast'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../hooks/useAuth'
 
 const WEEK_COUNT = 6
+
+function supersetLabels(exercises = []) {
+  const groups = new Map()
+  exercises.forEach(exercise => {
+    if (!exercise.superset_group) return
+    if (!groups.has(exercise.superset_group)) groups.set(exercise.superset_group, [])
+    groups.get(exercise.superset_group).push(exercise)
+  })
+
+  const labels = new Map()
+  let groupIndex = 0
+  for (const group of groups.values()) {
+    if (group.length < 2) continue
+    let value = ++groupIndex
+    let letter = ''
+    while (value > 0) {
+      value -= 1
+      letter = String.fromCharCode(65 + value % 26) + letter
+      value = Math.floor(value / 26)
+    }
+    group.forEach((exercise, index) => labels.set(exercise.id, `${letter}${index + 1}`))
+  }
+  return labels
+}
 
 export default function ProgrammePage({ clientId: propClientId, clientName: propClientName }) {
   const { profile, isCoach } = useAuth()
@@ -243,7 +268,8 @@ export default function ProgrammePage({ clientId: propClientId, clientName: prop
           await supabase.from('exercises').insert({
             programme_session_id: newSess.id,
             position: ex.position, name: ex.name,
-            sets_reps: ex.sets_reps, notes: ex.notes, week_loads: weekLoads
+            sets_reps: ex.sets_reps, notes: ex.notes, week_loads: weekLoads,
+            superset_group: ex.superset_group || null
           })
         }
       }
@@ -301,7 +327,8 @@ export default function ProgrammePage({ clientId: propClientId, clientName: prop
       await supabase.from('exercises').insert({
         programme_session_id: newSess.id,
         position: ex.position, name: ex.name,
-        sets_reps: ex.sets_reps, notes: ex.notes, week_loads: ex.week_loads
+        sets_reps: ex.sets_reps, notes: ex.notes, week_loads: ex.week_loads,
+        superset_group: ex.superset_group || null
       })
     }
     await loadSessions(activeProg)
@@ -322,7 +349,8 @@ export default function ProgrammePage({ clientId: propClientId, clientName: prop
           await supabase.from('exercises').upsert({
             id: ex.id, programme_session_id: s.id,
             position: ex.position, name: ex.name,
-            sets_reps: ex.sets_reps, notes: ex.notes, week_loads: ex.week_loads
+            sets_reps: ex.sets_reps, notes: ex.notes, week_loads: ex.week_loads,
+            superset_group: ex.superset_group || null
           })
         }
         await supabase.from('programme_sessions').update({ name: s.name }).eq('id', s.id)
@@ -376,14 +404,44 @@ export default function ProgrammePage({ clientId: propClientId, clientName: prop
     }))
   }
 
+  function toggleSuperset(exIdx) {
+    const exercises = sessions[activeTab]?.exercises || []
+    const exercise = exercises[exIdx]
+    const nextExercise = exercises[exIdx + 1]
+    if (!exercise || !nextExercise || !exercise.name?.trim() || !nextExercise.name?.trim() ||
+      exercise.name.trim().toLowerCase() === 'gap' || nextExercise.name.trim().toLowerCase() === 'gap') return
+
+    const currentGroup = exercise.superset_group
+    if (currentGroup && currentGroup === nextExercise.superset_group) {
+      updateSession(prev => prev.map((session, sessionIdx) => sessionIdx !== activeTab ? session : {
+        ...session,
+        exercises: session.exercises.map(item => item.superset_group === currentGroup
+          ? { ...item, superset_group: null }
+          : item)
+      }))
+      return
+    }
+
+    const replacedGroups = new Set([currentGroup, nextExercise.superset_group].filter(Boolean))
+    const groupId = globalThis.crypto?.randomUUID?.() || `superset-${Date.now()}-${exIdx}`
+    updateSession(prev => prev.map((session, sessionIdx) => sessionIdx !== activeTab ? session : {
+      ...session,
+      exercises: session.exercises.map((item, index) => {
+        if (index === exIdx || index === exIdx + 1) return { ...item, superset_group: groupId }
+        if (replacedGroups.has(item.superset_group)) return { ...item, superset_group: null }
+        return item
+      })
+    }))
+  }
+
   async function addExercise() {
     const sess = sessions[activeTab]
     const { data } = await supabase.from('exercises').insert({
       programme_session_id: sess.id, position: sess.exercises.length,
-      name: '', sets_reps: '', notes: '', week_loads: ['', '', '', '', '', '']
+      name: '', sets_reps: '', notes: '', week_loads: ['', '', '', '', '', ''], superset_group: null
     }).select().single()
     updateSession(prev => prev.map((s, si) => si !== activeTab ? s : {
-      ...s, exercises: [...s.exercises, { ...data, week_loads: ['', '', '', '', '', ''] }]
+      ...s, exercises: [...s.exercises, { ...data, week_loads: ['', '', '', '', '', ''], superset_group: null }]
     }))
     setTimeout(() => {
       const inputs = document.querySelectorAll('.ex-name-input')
@@ -395,7 +453,11 @@ export default function ProgrammePage({ clientId: propClientId, clientName: prop
     const ex = sessions[activeTab].exercises[exIdx]
     await supabase.from('exercises').delete().eq('id', ex.id)
     updateSession(prev => prev.map((s, si) => si !== activeTab ? s : {
-      ...s, exercises: s.exercises.filter((_, ei) => ei !== exIdx).map((e, i) => ({ ...e, position: i }))
+      ...s, exercises: s.exercises.filter((_, ei) => ei !== exIdx).map((e, i) => ({
+        ...e,
+        position: i,
+        superset_group: ex.superset_group && e.superset_group === ex.superset_group ? null : e.superset_group
+      }))
     }))
   }
 
@@ -448,6 +510,8 @@ export default function ProgrammePage({ clientId: propClientId, clientName: prop
 
   if (loading) return <div className="spinner">Loading programme…</div>
   const curr = sessions[activeTab]
+  const currentSupersetLabels = supersetLabels(curr?.exercises || [])
+  const printSupersetLabels = new Map(sessions.map(session => [session.id, supersetLabels(session.exercises || [])]))
 
   return (
     <div style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
@@ -663,6 +727,7 @@ export default function ProgrammePage({ clientId: propClientId, clientName: prop
             <thead>
               <tr>
                 <th style={{ width: 32 }}></th>
+                <th style={{ minWidth: 64 }}>Pair</th>
                 <th style={{ minWidth: 140 }}>Exercise</th>
                 <th style={{ minWidth: 80 }}>Sets × Reps</th>
                 <th style={{ minWidth: 100 }}>Notes</th>
@@ -682,6 +747,16 @@ export default function ProgrammePage({ clientId: propClientId, clientName: prop
                       <button onClick={() => moveExercise(ei, 1)} disabled={ei === curr.exercises.length - 1}
                         style={{ background: 'none', border: 'none', color: ei === curr.exercises.length - 1 ? 'transparent' : 'var(--text3)', cursor: ei === curr.exercises.length - 1 ? 'default' : 'pointer', padding: '1px 4px', fontSize: 9, lineHeight: 1, opacity: ei === curr.exercises.length - 1 ? 0 : 0.6 }}>▼</button>
                     </div>
+                  </td>
+                  <td>
+                    <button
+                      onClick={() => toggleSuperset(ei)}
+                      disabled={!ex.name?.trim() || !curr.exercises[ei + 1]?.name?.trim() || ex.name.trim().toLowerCase() === 'gap' || curr.exercises[ei + 1]?.name?.trim().toLowerCase() === 'gap'}
+                      title={currentSupersetLabels.has(ex.id) ? 'Remove superset pairing' : 'Pair with next exercise'}
+                      aria-label={currentSupersetLabels.has(ex.id) ? `Remove superset ${currentSupersetLabels.get(ex.id)}` : 'Pair this exercise with the next exercise'}
+                      style={{ background: currentSupersetLabels.has(ex.id) ? 'var(--gold-bg)' : 'transparent', border: '1px solid var(--border2)', borderRadius: 4, color: currentSupersetLabels.has(ex.id) ? 'var(--gold)' : 'var(--text3)', cursor: 'pointer', fontSize: 10, fontWeight: 600, padding: '4px 5px', whiteSpace: 'nowrap' }}>
+                      {currentSupersetLabels.get(ex.id) || 'Pair next'}
+                    </button>
                   </td>
                   <td>
                     <textarea className="cell-input ex ex-name-input" value={ex.name} placeholder="Exercise name" rows={1}
@@ -727,7 +802,7 @@ export default function ProgrammePage({ clientId: propClientId, clientName: prop
         </div>
       </div>
 
-      {isCoach && (
+      {isCoach && createPortal((
         <div className="programme-print" aria-hidden="true">
           <header className="programme-print-header">
             <div className="programme-print-brand">HOSMAN</div>
@@ -738,8 +813,16 @@ export default function ProgrammePage({ clientId: propClientId, clientName: prop
             <section className="programme-print-session" key={session.id}>
               <h2>{session.name}</h2>
               <table>
+                <colgroup>
+                  <col style={{ width: '6%' }} />
+                  <col style={{ width: '22%' }} />
+                  <col style={{ width: '10%' }} />
+                  <col style={{ width: '22%' }} />
+                  {Array.from({ length: WEEK_COUNT }, (_, weekIdx) => <col key={weekIdx} style={{ width: '6.67%' }} />)}
+                </colgroup>
                 <thead>
                   <tr>
+                    <th>Pair</th>
                     <th>Exercise</th>
                     <th>Sets × Reps</th>
                     <th>Notes</th>
@@ -751,10 +834,11 @@ export default function ProgrammePage({ clientId: propClientId, clientName: prop
                     const exerciseName = exercise.name?.trim()
                     if (!exerciseName) return null
                     if (exerciseName.toLowerCase() === 'gap') {
-                      return <tr className="programme-print-gap" key={exercise.id || exerciseIdx}><td colSpan={9} /></tr>
+                      return <tr className="programme-print-gap" key={exercise.id || exerciseIdx}><td colSpan={10} /></tr>
                     }
                     return (
                       <tr key={exercise.id || exerciseIdx}>
+                        <td>{printSupersetLabels.get(session.id)?.get(exercise.id) || '—'}</td>
                         <td>{exerciseName}</td>
                         <td>{exercise.sets_reps || '—'}</td>
                         <td>{exercise.notes || '—'}</td>
@@ -769,7 +853,7 @@ export default function ProgrammePage({ clientId: propClientId, clientName: prop
             </section>
           ))}
         </div>
-      )}
+      ), document.body)}
     </div>
   )
 }

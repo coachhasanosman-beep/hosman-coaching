@@ -14,6 +14,8 @@ Stack: React + Vite PWA · Supabase (auth + database) · Stripe (payments) · Ve
 
 2. Once created, go to **SQL Editor** and paste the entire contents of `supabase-schema.sql` → Run
 
+   For an existing project, run `supabase/migrations/20261102000000_add_exercise_superset_group.sql` in the SQL Editor to enable saved superset pairings.
+
 3. Go to **Settings → API** and copy:
    - Project URL → `VITE_SUPABASE_URL`
    - anon/public key → `VITE_SUPABASE_ANON_KEY`
