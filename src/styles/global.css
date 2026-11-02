@@ -237,6 +237,79 @@ h3 { font-size: 15px; font-weight: 500; color: var(--text); }
 .cell-input:focus { background: var(--surface2); outline: 1px solid var(--gold); border-radius: 3px; padding: 2px 4px; }
 .cell-input::placeholder { color: var(--text3); }
 
+.programme-print { display: none; }
+
+@media print {
+  @page { margin: 0; }
+
+  html, body, #root {
+    height: auto !important;
+    min-height: 100% !important;
+    background: #141414 !important;
+    color: #fff !important;
+  }
+
+  body * { visibility: hidden !important; }
+  .programme-print, .programme-print * { visibility: visible !important; }
+  .programme-print {
+    display: block !important;
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    min-height: 100vh;
+    padding: 14mm;
+    background: #141414 !important;
+    color: #fff !important;
+    font-family: Arial, Helvetica, sans-serif;
+    font-size: 10pt;
+    print-color-adjust: exact;
+    -webkit-print-color-adjust: exact;
+  }
+
+  .programme-print-header {
+    border-bottom: 1px solid #C9A84C;
+    margin-bottom: 10mm;
+    padding-bottom: 6mm;
+  }
+
+  .programme-print-brand {
+    color: #C9A84C;
+    font-size: 20pt;
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    margin-bottom: 5mm;
+  }
+
+  .programme-print-header h1 {
+    color: #fff;
+    font: 600 18pt Arial, Helvetica, sans-serif;
+    margin: 0 0 2mm;
+  }
+
+  .programme-print-header p { color: #C9A84C; font-size: 11pt; margin: 0; }
+  .programme-print-session { margin-bottom: 9mm; break-inside: avoid; }
+  .programme-print-session h2 {
+    color: #C9A84C;
+    font: 600 12pt Arial, Helvetica, sans-serif;
+    margin: 0 0 3mm;
+  }
+
+  .programme-print table { width: 100%; border-collapse: collapse; table-layout: fixed; }
+  .programme-print th, .programme-print td {
+    border-bottom: 1px solid #3c3c3c;
+    color: #fff;
+    padding: 2.5mm 2mm;
+    text-align: left;
+    vertical-align: top;
+    overflow-wrap: anywhere;
+  }
+
+  .programme-print th { color: #C9A84C; font-size: 8pt; font-weight: 600; }
+  .programme-print td { font-size: 8.5pt; }
+  .programme-print-gap td { height: 3mm; border-bottom: 1px solid #C9A84C; padding: 0; }
+  .programme-print tr { break-inside: avoid; }
+}
+
 /* ── Schedule ─── */
 .sched-item {
   display: flex; align-items: center; gap: 12px;

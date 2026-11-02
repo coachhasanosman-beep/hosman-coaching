@@ -48,7 +48,7 @@ export default function CoachClientView({ client, onBack }) {
 
       {/* Content */}
       <div style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
-        {tab === 0 && <ProgrammePage clientId={client.id} />}
+        {tab === 0 && <ProgrammePage clientId={client.id} clientName={client.full_name} />}
         {tab === 1 && <SchedulePage  clientId={client.id} />}
         {tab === 2 && <CoachSessionManager clientId={client.id} client={client} />}
         {tab === 3 && <MetricsPage   clientId={client.id} />}

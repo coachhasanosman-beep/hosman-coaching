@@ -5,9 +5,10 @@ import { useAuth } from '../../hooks/useAuth'
 
 const WEEK_COUNT = 6
 
-export default function ProgrammePage({ clientId: propClientId }) {
+export default function ProgrammePage({ clientId: propClientId, clientName: propClientName }) {
   const { profile, isCoach } = useAuth()
   const clientId = propClientId || profile?.id
+  const printClientName = propClientName || profile?.full_name || 'Client'
 
   const [macrocycles, setMacrocycles]         = useState([])
   const [activeMacro, setActiveMacro]         = useState(null)
@@ -506,9 +507,12 @@ export default function ProgrammePage({ clientId: propClientId }) {
         <div className="brand-label">HOSMAN</div>
         <div className="row">
           <h1>Programme</h1>
-          <span style={{ fontSize: 11, color: saving ? 'var(--gold)' : 'var(--text3)', letterSpacing: '0.06em' }}>
-            {saving ? 'Saving…' : 'Auto-saved'}
-          </span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+            {isCoach && <button className="btn btn-gold btn-sm programme-download" onClick={() => window.print()}>Download PDF</button>}
+            <span style={{ fontSize: 11, color: saving ? 'var(--gold)' : 'var(--text3)', letterSpacing: '0.06em' }}>
+              {saving ? 'Saving…' : 'Auto-saved'}
+            </span>
+          </div>
         </div>
       </div>
 
@@ -722,6 +726,50 @@ export default function ProgrammePage({ clientId: propClientId }) {
           <div style={{ height: 20 }} />
         </div>
       </div>
+
+      {isCoach && (
+        <div className="programme-print" aria-hidden="true">
+          <header className="programme-print-header">
+            <div className="programme-print-brand">HOSMAN</div>
+            <h1>{printClientName}</h1>
+            <p>{activeProg?.title || 'Programme'}{activeMacro?.title ? ` · ${activeMacro.title}` : ''}</p>
+          </header>
+          {sessions.map(session => (
+            <section className="programme-print-session" key={session.id}>
+              <h2>{session.name}</h2>
+              <table>
+                <thead>
+                  <tr>
+                    <th>Exercise</th>
+                    <th>Sets × Reps</th>
+                    <th>Notes</th>
+                    {Array.from({ length: WEEK_COUNT }, (_, weekIdx) => <th key={weekIdx}>Wk {weekIdx + 1}</th>)}
+                  </tr>
+                </thead>
+                <tbody>
+                  {(session.exercises || []).map((exercise, exerciseIdx) => {
+                    const exerciseName = exercise.name?.trim()
+                    if (!exerciseName) return null
+                    if (exerciseName.toLowerCase() === 'gap') {
+                      return <tr className="programme-print-gap" key={exercise.id || exerciseIdx}><td colSpan={9} /></tr>
+                    }
+                    return (
+                      <tr key={exercise.id || exerciseIdx}>
+                        <td>{exerciseName}</td>
+                        <td>{exercise.sets_reps || '—'}</td>
+                        <td>{exercise.notes || '—'}</td>
+                        {Array.from({ length: WEEK_COUNT }, (_, weekIdx) => (
+                          <td key={weekIdx}>{exercise.week_loads?.[weekIdx] || '—'}</td>
+                        ))}
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </section>
+          ))}
+        </div>
+      )}
     </div>
   )
 }
