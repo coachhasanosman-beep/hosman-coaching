@@ -727,8 +727,7 @@ export default function ProgrammePage({ clientId: propClientId, clientName: prop
             <thead>
               <tr>
                 <th style={{ width: 32 }}></th>
-                <th style={{ minWidth: 64 }}>Pair</th>
-                <th style={{ minWidth: 140 }}>Exercise</th>
+                <th style={{ minWidth: 180 }}>Exercise</th>
                 <th style={{ minWidth: 80 }}>Sets × Reps</th>
                 <th style={{ minWidth: 100 }}>Notes</th>
                 {Array.from({ length: WEEK_COUNT }, (_, i) => (
@@ -754,11 +753,9 @@ export default function ProgrammePage({ clientId: propClientId, clientName: prop
                       disabled={!ex.name?.trim() || !curr.exercises[ei + 1]?.name?.trim() || ex.name.trim().toLowerCase() === 'gap' || curr.exercises[ei + 1]?.name?.trim().toLowerCase() === 'gap'}
                       title={currentSupersetLabels.has(ex.id) ? 'Remove superset pairing' : 'Pair with next exercise'}
                       aria-label={currentSupersetLabels.has(ex.id) ? `Remove superset ${currentSupersetLabels.get(ex.id)}` : 'Pair this exercise with the next exercise'}
-                      style={{ background: currentSupersetLabels.has(ex.id) ? 'var(--gold-bg)' : 'transparent', border: '1px solid var(--border2)', borderRadius: 4, color: currentSupersetLabels.has(ex.id) ? 'var(--gold)' : 'var(--text3)', cursor: 'pointer', fontSize: 10, fontWeight: 600, padding: '4px 5px', whiteSpace: 'nowrap' }}>
-                      {currentSupersetLabels.get(ex.id) || 'Pair next'}
+                      style={{ background: currentSupersetLabels.has(ex.id) ? 'var(--gold-bg)' : 'transparent', border: '1px solid var(--border2)', borderRadius: 4, color: currentSupersetLabels.has(ex.id) ? 'var(--gold)' : 'var(--text3)', cursor: 'pointer', fontSize: 9, fontWeight: 600, padding: '1px 5px', marginBottom: 3, whiteSpace: 'nowrap' }}>
+                      {currentSupersetLabels.get(ex.id) || '+ Pair'}
                     </button>
-                  </td>
-                  <td>
                     <textarea className="cell-input ex ex-name-input" value={ex.name} placeholder="Exercise name" rows={1}
                       onChange={e => { onCellChange(ei, 'name', e.target.value); autoResize(e) }}
                       onFocus={autoResize}
